@@ -1,4 +1,4 @@
-# Loudmouth
+# Kenopsia
 
 A powerful, source-agnostic music player for iPhone, iPad, Apple Watch, and CarPlay.
 
@@ -22,7 +22,7 @@ A powerful, source-agnostic music player for iPhone, iPad, Apple Watch, and CarP
 
 ## Privacy
 
-[Privacy Policy](https://mo3he.github.io/Loudmouth/privacy)
+[Privacy Policy](https://mo3he.github.io/Kenopsia/privacy)
 
 ## Requirements
 

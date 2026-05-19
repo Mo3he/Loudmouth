@@ -1,4 +1,4 @@
-# Loudmouth – Agent Instructions
+# Kenopsia – Agent Instructions
 
 Swift/SwiftUI iOS music player. iOS 17+, Xcode 16, Swift 5.10. No external dependencies.
 
@@ -9,7 +9,7 @@ Swift/SwiftUI iOS music player. iOS 17+, Xcode 16, Swift 5.10. No external depen
 xcodegen generate
 
 # Build for simulator
-xcodebuild -project Loudmouth.xcodeproj -scheme Loudmouth \
+xcodebuild -project Kenopsia.xcodeproj -scheme Kenopsia \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Check errors only
@@ -21,8 +21,8 @@ xcodebuild ... build 2>&1 | grep -E "error:|BUILD SUCCEEDED|BUILD FAILED"
 ## Source layout
 
 ```
-Loudmouth/Sources/
-  App/            LoudmouthApp.swift
+Kenopsia/Sources/
+  App/            KenopsiaApp.swift
   Models/         Track, MusicSource, Queue, Playlist, Album, PlayerState
   Services/       AudioEngine, PlaybackService, SourceResolver, LibraryStore, LibraryScanner,
                   AppleMusicService, ArtworkCache/FetchService, LyricsService,
@@ -30,7 +30,7 @@ Loudmouth/Sources/
                   ListeningStatsStore
   ViewModels/     PlayerViewModel, LibraryViewModel, SourceViewModel, SearchViewModel
   Views/          ContentView + subfolders: Library, NowPlaying, Onboarding, Search, Settings, Sources
-LoudmouthWidget/  Home Screen widget (now-playing)
+KenopsiaWidget/   Home Screen widget (now-playing)
 project.yml       XcodeGen project spec
 ROADMAP.md        Feature backlog with implementation notes
 ```
@@ -51,7 +51,7 @@ All adapters conform to `protocol MusicSourceAdapter: Actor`. Register via `Sour
 
 ### LibraryStore (@MainActor)
 
-Tracks are merged by `TrackURI.stableKey`. Existing stats (playCount, lastPlayedAt, isFavourited) survive rescans. Saves to `library.json` in the App Group container (`group.net.mohome.loudmouth`).
+Tracks are merged by `TrackURI.stableKey`. Existing stats (playCount, lastPlayedAt, isFavourited) survive rescans. Saves to `library.json` in the App Group container (`group.net.mohome.kenopsia`).
 
 ### Concurrency
 
@@ -87,13 +87,13 @@ Forgetting to reassign loses the change silently.
 
 | | |
 |---|---|
-| Bundle ID | `net.mohome.loudmouth` |
-| App Group | `group.net.mohome.loudmouth` |
+| Bundle ID | `net.mohome.kenopsia` |
+| App Group | `group.net.mohome.kenopsia` |
 | Team | `KTX2SJ3P98` |
 | MusicKit entitlement | must be enabled in Apple Developer portal for real-device builds |
 
 ## Key reference files
 
 - [ROADMAP.md](ROADMAP.md) — feature backlog and implementation notes for planned features
-- [Loudmouth/Loudmouth.entitlements](Loudmouth/Loudmouth.entitlements) — all entitlements
+- [Kenopsia/Kenopsia.entitlements](Kenopsia/Kenopsia.entitlements) — all entitlements
 - [project.yml](project.yml) — XcodeGen spec (single source of truth for project structure)
