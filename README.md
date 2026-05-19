@@ -1,10 +1,10 @@
 # Loudmouth
 
-A powerful, source-agnostic music player for iPhone and iPad.
+A powerful, source-agnostic music player for iPhone, iPad, Apple Watch, and CarPlay.
 
 ## Features
 
-- Play music from local files, iCloud Drive, Subsonic/Navidrome servers, NAS/DLNA, and Backblaze B2
+- Play music from local files, iCloud Drive, Subsonic/Navidrome servers, NAS/DLNA, Backblaze B2, and Apple Music
 - Gapless playback with crossfade
 - 10-band parametric EQ with custom presets
 - Synced lyrics via LRC files or LRCLIB
@@ -17,6 +17,8 @@ A powerful, source-agnostic music player for iPhone and iPad.
 - Tag editor (ID3, Vorbis, M4A)
 - Lock screen / Control Centre integration
 - Home Screen widget
+- CarPlay — Now Playing and library browse (Albums, Playlists, Songs)
+- Apple Watch companion — Now Playing controls via WatchConnectivity
 
 ## Privacy
 
@@ -25,6 +27,7 @@ A powerful, source-agnostic music player for iPhone and iPad.
 ## Requirements
 
 - iOS 17 or later
+- watchOS 10 or later (companion app)
 - Xcode 16 or later (to build from source)
 
 ## License
