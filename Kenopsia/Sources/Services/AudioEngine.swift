@@ -1,5 +1,6 @@
 import AVFoundation
 import MediaPlayer
+import Accelerate
 
 // MARK: - AudioEngine
 /// Wraps AVAudioEngine to provide:
@@ -23,6 +24,23 @@ final class AudioEngine {
     private var stagingPlayer: AVAudioPlayerNode { isUsingPlayerA ? playerB : playerA }
     private var isUsingPlayerA = true
 
+    // MARK: - Per-node generation counters
+    // Each scheduleFile/scheduleSegment call captures the node's current generation.
+    // Before calling stop() we increment the generation, so the captured value in
+    // the old closure never matches and the stale callback is silently dropped.
+    private var nodeGenerations: [ObjectIdentifier: Int] = [:]
+
+    private func currentGen(for node: AVAudioPlayerNode) -> Int {
+        nodeGenerations[ObjectIdentifier(node), default: 0]
+    }
+
+    @discardableResult
+    private func nextGen(for node: AVAudioPlayerNode) -> Int {
+        let g = currentGen(for: node) + 1
+        nodeGenerations[ObjectIdentifier(node)] = g
+        return g
+    }
+
     // MARK: - State
     private(set) var isRunning = false
     private var graphBuilt = false
@@ -34,6 +52,10 @@ final class AudioEngine {
     // MARK: - Crossfade
     var crossfadeDuration: TimeInterval = 3.0   // seconds; 0 = gapless, no fade
     var crossfadeCurve: CrossfadeCurve = .equalPower
+    // Volume the new active player should reach after a crossfade completes.
+    // Set by applyReplayGain(); the crossfade final step reads this so the gain
+    // is applied at the moment the fade ends instead of being overwritten by it.
+    private var pendingActivePlayerVolume: Float = 1.0
 
     // MARK: - Init
     init() {
@@ -109,21 +131,56 @@ final class AudioEngine {
                           userInfo: [NSLocalizedDescriptionKey: "AVAudioEngine failed to start"])
         }
         isRunning = true
+        startMetering()
     }
 
     func stop() {
-        playerA.stop()
-        playerB.stop()
+        stopMetering()
+        nextGen(for: playerA); playerA.stop()
+        nextGen(for: playerB); playerB.stop()
         engine.stop()
         isRunning = false
+    }
+
+    /// Resume the active player after a pause.
+    /// Always checks the *actual* AVAudioEngine.isRunning rather than the
+    /// Resume playback by rescheduling `file` from `seconds`.
+    /// Always reschedules rather than resuming the paused node, so it is
+    /// reliable even when the engine was restarted by a route change or
+    /// interruption and the player node's queued audio was cleared.
+    func resumeActivePlayer(at seconds: Double, in file: AVAudioFile) throws {
+        if !engine.isRunning {
+            isRunning = false   // clear stale flag so start() can proceed
+            try start()
+        }
+        guard !engine.outputConnectionPoints(for: activePlayer, outputBus: 0).isEmpty else {
+            throw NSError(domain: AVFoundationErrorDomain, code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "Player node disconnected"])
+        }
+        let sampleRate = file.processingFormat.sampleRate
+        let startSample = AVAudioFramePosition(seconds * sampleRate)
+        let remaining = file.length - startSample
+        guard remaining > 0 else { return }
+        let player = activePlayer
+        let gen = nextGen(for: player)
+        player.stop()
+        player.scheduleSegment(
+            file, startingFrame: startSample,
+            frameCount: AVAudioFrameCount(remaining), at: nil,
+            completionCallbackType: .dataPlayedBack
+        ) { [weak self] _ in
+            guard let self, self.currentGen(for: player) == gen else { return }
+            self.handlePlaybackCompletion()
+        }
+        player.play()
     }
 
     /// Stop only the player nodes without tearing down the engine graph.
     /// Use this when switching to AVPlayer streaming so the engine stays
     /// connected and doesn't need a full restart when returning to local files.
     func stopPlayers() {
-        playerA.stop()
-        playerB.stop()
+        nextGen(for: playerA); playerA.stop()
+        nextGen(for: playerB); playerB.stop()
     }
 
     /// Schedule a file for the active player and start playback.
@@ -138,19 +195,25 @@ final class AudioEngine {
                           userInfo: [NSLocalizedDescriptionKey: "Player node not connected to engine"])
         }
         applyReplayGain(replayGainDB)
-        activePlayer.stop()
-        activePlayer.scheduleFile(file, at: time, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            self?.handlePlaybackCompletion()
+        let player = activePlayer
+        let gen = nextGen(for: player)   // increment before stop so old callback is stale
+        player.stop()
+        player.scheduleFile(file, at: time, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            guard let self, self.currentGen(for: player) == gen else { return }
+            self.handlePlaybackCompletion()
         }
-        activePlayer.play()
+        player.play()
         setupNowPlaying()
     }
 
     /// Pre-schedule the next track on the staging player so it's ready for gapless handoff.
     func scheduleNext(file: AVAudioFile) {
-        stagingPlayer.stop()
-        stagingPlayer.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            self?.handlePlaybackCompletion()
+        let player = stagingPlayer
+        let gen = nextGen(for: player)
+        player.stop()
+        player.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            guard let self, self.currentGen(for: player) == gen else { return }
+            self.handlePlaybackCompletion()
         }
     }
 
@@ -161,9 +224,33 @@ final class AudioEngine {
         } else {
             // True gapless: staging player was pre-scheduled; just start it.
             stagingPlayer.play()
+            nextGen(for: activePlayer)   // invalidate before stopping old active player
             activePlayer.stop()
         }
         isUsingPlayerA.toggle()
+    }
+
+    /// Seek the active player to a new position within a file.
+    /// Uses the generation counter so the old callback is discarded.
+    func seekActivePlayer(to seconds: Double, in file: AVAudioFile) {
+        let sampleRate = file.processingFormat.sampleRate
+        let startSample = AVAudioFramePosition(seconds * sampleRate)
+        let remaining = file.length - startSample
+        guard remaining > 0 else { return }
+        let player = activePlayer
+        let gen = nextGen(for: player)
+        player.stop()
+        player.scheduleSegment(
+            file,
+            startingFrame: startSample,
+            frameCount: AVAudioFrameCount(remaining),
+            at: nil,
+            completionCallbackType: .dataPlayedBack
+        ) { [weak self] _ in
+            guard let self, self.currentGen(for: player) == gen else { return }
+            self.handlePlaybackCompletion()
+        }
+        player.play()
     }
 
     // MARK: - EQ
@@ -185,17 +272,17 @@ final class AudioEngine {
     }
 
     // MARK: - ReplayGain
-    private func applyReplayGain(_ gainDB: Float?) {
-        guard let gainDB else {
-            timePitch.rate = 1.0
-            return
+    func applyReplayGain(_ gainDB: Float?) {
+        let linear: Float
+        if let gainDB {
+            linear = Float(pow(10.0, Double(gainDB) / 20.0)).clamped(to: 0...2)
+        } else {
+            linear = 1.0
         }
-        // Apply as a pre-gain on the time pitch node's volume.
-        // +/- dB -> linear gain: 10^(dB/20)
-        let linear = Float(pow(10.0, Double(gainDB) / 20.0))
-        timePitch.rate = 1.0   // preserve pitch; only adjust volume
-        // Volume is set on the active player directly.
-        activePlayer.volume = linear.clamped(to: 0...2)
+        timePitch.rate = 1.0
+        activePlayer.volume = linear
+        // Store for the crossfade final step so the ramp doesn't overwrite the gain.
+        pendingActivePlayerVolume = linear
     }
 
     // MARK: - Crossfade
@@ -205,6 +292,9 @@ final class AudioEngine {
         let active = activePlayer
         let staging = stagingPlayer
         let curve = crossfadeCurve
+        // Invalidate the old player's generation now so its scheduled completion
+        // callback is discarded and won't fire handlePlaybackCompletion() a second time.
+        nextGen(for: active)
         staging.volume = 0
         staging.play()
         for i in 0...steps {
@@ -214,6 +304,13 @@ final class AudioEngine {
                 let (fadeOut, fadeIn) = curve.gains(at: progress)
                 active.volume  = fadeOut
                 staging.volume = fadeIn
+                if i == steps {
+                    // Crossfade complete — stop old player and reset its volume for next use.
+                    active.stop()
+                    active.volume = 1.0
+                    // Apply the ReplayGain target volume now that the ramp is done.
+                    staging.volume = self.pendingActivePlayerVolume
+                }
             }
         }
     }
@@ -225,6 +322,127 @@ final class AudioEngine {
     }
 
     var onTrackDidFinish: (() -> Void)?
+
+    // MARK: - Spectrum metering (FFT)
+    private(set) var meterLevels: [Float] = Array(repeating: 0, count: 14)
+    private var isMeteringInstalled = false
+
+    // 14 log-spaced bands: 32 Hz → 16 kHz
+    private let bandEdges: [Float] = [20, 40, 63, 100, 160, 250, 400, 630,
+                                      1000, 1600, 2500, 4000, 6300, 10000, 20000]
+    private let fftSize = 2048
+    private var fftSetup: FFTSetup?
+    private var fftHannWindow: [Float] = []
+    private var fftAccumBuffer: [Float] = []
+    private var fftAccumCount = 0
+
+    private func setupFFT() {
+        let log2n = vDSP_Length(log2(Float(fftSize)))
+        fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
+        fftHannWindow = [Float](repeating: 0, count: fftSize)
+        vDSP_hann_window(&fftHannWindow, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+        fftAccumBuffer = [Float](repeating: 0, count: fftSize)
+        fftAccumCount = 0
+    }
+
+    private func teardownFFT() {
+        if let s = fftSetup { vDSP_destroy_fftsetup(s); fftSetup = nil }
+        fftAccumBuffer = []
+        fftAccumCount = 0
+    }
+
+    private func computeSpectrum(sampleRate: Float, setup: FFTSetup) -> [Float] {
+        let n    = fftSize
+        let half = n / 2
+        let log2n = vDSP_Length(log2(Float(n)))
+        let bandCount = bandEdges.count - 1
+
+        // Apply Hann window
+        var windowed = [Float](repeating: 0, count: n)
+        vDSP_vmul(fftAccumBuffer, 1, fftHannWindow, 1, &windowed, 1, vDSP_Length(n))
+
+        // Pack interleaved reals into split-complex (treat pairs as Re/Im)
+        var realPart = [Float](repeating: 0, count: half)
+        var imagPart = [Float](repeating: 0, count: half)
+        for i in 0..<half {
+            realPart[i] = windowed[i * 2]
+            imagPart[i] = windowed[i * 2 + 1]
+        }
+
+        // Forward FFT
+        realPart.withUnsafeMutableBufferPointer { rb in
+            imagPart.withUnsafeMutableBufferPointer { ib in
+                var sc = DSPSplitComplex(realp: rb.baseAddress!, imagp: ib.baseAddress!)
+                vDSP_fft_zrip(setup, &sc, 1, log2n, FFTDirection(FFT_FORWARD))
+            }
+        }
+
+        // Magnitude spectrum
+        var magnitudes = [Float](repeating: 0, count: half)
+        realPart.withUnsafeBufferPointer { rb in
+            imagPart.withUnsafeBufferPointer { ib in
+                var sc = DSPSplitComplex(
+                    realp: UnsafeMutablePointer(mutating: rb.baseAddress!),
+                    imagp: UnsafeMutablePointer(mutating: ib.baseAddress!)
+                )
+                vDSP_zvabs(&sc, 1, &magnitudes, 1, vDSP_Length(half))
+            }
+        }
+
+        // Normalise: full-scale sine → ~1.0
+        var scale = 2.0 / Float(n)
+        vDSP_vsmul(magnitudes, 1, &scale, &magnitudes, 1, vDSP_Length(half))
+
+        // Map bins to frequency bands
+        let freqPerBin = sampleRate / Float(n)
+        var bands = [Float](repeating: 0, count: bandCount)
+        for b in 0..<bandCount {
+            let lo = max(1, Int(bandEdges[b] / freqPerBin))
+            let hi = min(half - 1, Int(bandEdges[b + 1] / freqPerBin))
+            guard hi >= lo else { continue }
+            var sum: Float = 0
+            for i in lo...hi { sum += magnitudes[i] }
+            bands[b] = sum / Float(hi - lo + 1)  // mean magnitude per band
+        }
+        return bands
+    }
+
+    private func startMetering() {
+        guard !isMeteringInstalled, engine.isRunning else { return }
+        setupFFT()
+        let outputNode = engine.mainMixerNode
+        let format = outputNode.outputFormat(forBus: 0)
+        outputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self,
+                  let channelData = buffer.floatChannelData,
+                  buffer.frameLength > 0,
+                  let setup = self.fftSetup else { return }
+
+            let frameCount = min(Int(buffer.frameLength), self.fftSize - self.fftAccumCount)
+            let nCh = min(Int(buffer.format.channelCount), 2)
+            for i in 0..<frameCount {
+                var s: Float = 0
+                for ch in 0..<nCh { s += channelData[ch][i] }
+                self.fftAccumBuffer[self.fftAccumCount + i] = s / Float(nCh)
+            }
+            self.fftAccumCount += frameCount
+            guard self.fftAccumCount >= self.fftSize else { return }
+
+            let sampleRate = Float(buffer.format.sampleRate)
+            let bands = self.computeSpectrum(sampleRate: sampleRate, setup: setup)
+            self.fftAccumCount = 0
+            DispatchQueue.main.async { self.meterLevels = bands }
+        }
+        isMeteringInstalled = true
+    }
+
+    private func stopMetering() {
+        guard isMeteringInstalled else { return }
+        engine.mainMixerNode.removeTap(onBus: 0)
+        isMeteringInstalled = false
+        teardownFFT()
+        meterLevels = Array(repeating: 0, count: 14)
+    }
 
     // MARK: - Helpers
     private func ensureRunning() throws {

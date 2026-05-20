@@ -41,7 +41,17 @@ actor AppleMusicService: MusicSourceAdapter {
         request.sort(by: \.title, ascending: true)
         let response = try await request.response()
 
-        return response.items.map { Self.track(from: $0, sourceID: sourceID) }
+        // Kick off artwork caching in the background for any song not yet cached.
+        let songs = Array(response.items)
+        Task.detached(priority: .utility) {
+            for song in songs {
+                let key = "applemusic:\(song.id.rawValue)"
+                guard !ArtworkCache.shared.hasArtwork(forKey: key) else { continue }
+                await AppleMusicService.cacheArtwork(for: song, key: key)
+            }
+        }
+
+        return songs.map { Self.track(from: $0, sourceID: sourceID) }
     }
 
     // MARK: - Song lookup for playback
@@ -89,8 +99,9 @@ actor AppleMusicService: MusicSourceAdapter {
     static func cacheArtwork(for song: Song, key: String) async {
         guard let artwork = song.artwork else { return }
         let size = CGSize(width: 600, height: 600)
-        guard let url = artwork.url(width: Int(size.width), height: Int(size.height)),
-              let data = try? Data(contentsOf: url) else { return }
+        guard let url = artwork.url(width: Int(size.width), height: Int(size.height)) else { return }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return }
         ArtworkCache.shared.store(imageData: data, forKey: key)
     }
 }

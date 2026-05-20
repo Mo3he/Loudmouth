@@ -1,4 +1,4 @@
-# Loudmouth Roadmap
+# Kenopsia Roadmap
 
 Features planned for future releases, along with implementation notes to make them easy to pick up.
 
@@ -41,10 +41,10 @@ All three providers were fully implemented and working:
    }
    ```
 
-3. **Restore fetch functions** in `Loudmouth/Sources/Services/SourceResolver.swift`
+3. **Restore fetch functions** in `Kenopsia/Sources/Services/SourceResolver.swift`
    (add back `fetchDropboxTracks`, `fetchGoogleDriveTracks`, `fetchOneDriveTracks` and their `downloadURL` cases).
 
-4. **Add picker options and OAuth UI** in `Loudmouth/Sources/Views/Sources/SourcesView.swift`:
+4. **Add picker options and OAuth UI** in `Kenopsia/Sources/Views/Sources/SourcesView.swift`:
    - Add Dropbox/Google Drive/OneDrive tags to the `Picker`
    - Restore the `else { }` OAuth connect branch
    - Restore `oauthConnected` / `oauthAccountName` state vars

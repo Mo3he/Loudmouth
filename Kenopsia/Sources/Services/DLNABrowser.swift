@@ -37,27 +37,37 @@ actor DLNABrowser {
     }
 
     /// Recursively browse a container (objectID "0" = root).
-    private func browseContainer(objectID: String, controlURL: URL, sourceID: MusicSourceID) async throws -> [Track] {
-        let response = try await soapBrowse(objectID: objectID, controlURL: controlURL)
+    /// Paginates in blocks of 1000 items per container and enforces a recursion depth limit.
+    private func browseContainer(objectID: String, controlURL: URL, sourceID: MusicSourceID, depth: Int = 0) async throws -> [Track] {
+        guard depth < 10 else { return [] }    // cap recursion to avoid runaway tree walks
         var tracks: [Track] = []
+        var startIndex = 0
+        let pageSize = 1000
 
-        for item in response.items {
-            if item.isContainer {
-                let children = try await browseContainer(
-                    objectID: item.id,
-                    controlURL: controlURL,
-                    sourceID: sourceID
-                )
-                tracks.append(contentsOf: children)
-            } else if let track = item.asTrack(sourceID: sourceID) {
-                tracks.append(track)
+        repeat {
+            let response = try await soapBrowse(objectID: objectID, controlURL: controlURL, startingIndex: startIndex)
+            for item in response.items {
+                if item.isContainer {
+                    let children = try await browseContainer(
+                        objectID: item.id,
+                        controlURL: controlURL,
+                        sourceID: sourceID,
+                        depth: depth + 1
+                    )
+                    tracks.append(contentsOf: children)
+                } else if let track = item.asTrack(sourceID: sourceID) {
+                    tracks.append(track)
+                }
             }
-        }
+            if response.items.count < pageSize { break }
+            startIndex += response.items.count
+        } while true
+
         return tracks
     }
 
     // MARK: - SOAP Browse action
-    private func soapBrowse(objectID: String, controlURL: URL) async throws -> DLNABrowseResult {
+    private func soapBrowse(objectID: String, controlURL: URL, startingIndex: Int = 0) async throws -> DLNABrowseResult {
         let body = """
         <?xml version="1.0" encoding="utf-8"?>
         <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"
@@ -67,7 +77,7 @@ actor DLNABrowser {
               <ObjectID>\(objectID)</ObjectID>
               <BrowseFlag>BrowseDirectChildren</BrowseFlag>
               <Filter>*</Filter>
-              <StartingIndex>0</StartingIndex>
+              <StartingIndex>\(startingIndex)</StartingIndex>
               <RequestedCount>1000</RequestedCount>
               <SortCriteria></SortCriteria>
             </u:Browse>
@@ -181,8 +191,18 @@ struct DLNAItem {
 
     func asTrack(sourceID: MusicSourceID) -> Track? {
         guard !isContainer, let url = resourceURL else { return nil }
-        let ext = url.pathExtension
-        guard let format = AudioFormat(fileExtension: ext) else { return nil }
+        // Determine format from MIME type first so extensionless URLs (e.g.
+        // http://host:8200/MediaItems/123) are not silently dropped.
+        let format: AudioFormat
+        if let mime = mimeType, let f = AudioFormat(mimeType: mime) {
+            format = f
+        } else {
+            let ext = url.pathExtension
+            guard let f = AudioFormat(fileExtension: ext) else { return nil }
+            format = f
+        }
+        // Use the albumArtURI as the artwork cache key so DLNA tracks get artwork.
+        let artKey = albumArtURL.map { "dlna_art_\($0.absoluteString)" }
         return Track(
             title:           title,
             artist:          artist ?? "",
@@ -193,7 +213,8 @@ struct DLNAItem {
             source:          sourceID,
             uri:             .dlnaURL(url: url),
             format:          format,
-            durationSeconds: durationSeconds ?? 0
+            durationSeconds: durationSeconds ?? 0,
+            artworkCacheKey: artKey
         )
     }
 }
@@ -244,8 +265,11 @@ class DLNAResponseParser: NSObject, XMLParserDelegate {
                                title: "", isContainer: false)
         case "res":
             if var item = current, !item.isContainer {
-                if let urlStr = attributes["protocolInfo"], urlStr.contains("audio") {
-                    // protocolInfo is not the URL; the text content is the URL
+                // protocolInfo format: "http-get:*:audio/mpeg:DLNA.ORG_PN=..."
+                // The MIME type is the 3rd colon-separated field (index 2).
+                if let proto = attributes["protocolInfo"] {
+                    let fields = proto.split(separator: ":")
+                    if fields.count > 2 { item.mimeType = String(fields[2]) }
                 }
                 // Parse duration: "h:mm:ss.xxx"
                 if let durStr = attributes["duration"] {

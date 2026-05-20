@@ -30,6 +30,17 @@ final class PlayerViewModel: ObservableObject {
     func seek(to seconds: Double) { playback.seek(to: seconds) }
     func setVolume(_ v: Float)    { playback.setVolume(v) }
 
+    func toggleFavourite() { toggleFavourite(track: queue.currentTrack) }
+
+    func toggleFavourite(track: Track?) {
+        guard let track,
+              let idx = queue.tracks.firstIndex(where: { $0.id == track.id }) else { return }
+        queue.tracks[idx].isFavourited.toggle()
+        LibraryStore.shared.update(track: queue.tracks[idx])
+    }
+
+    var meterLevels: [Float] { playback.meterLevels }
+
     func play(track: Track) {
         playback.enqueue(tracks: [track], playImmediately: true)
     }

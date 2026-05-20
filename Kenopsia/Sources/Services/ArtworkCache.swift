@@ -18,11 +18,12 @@ final class ArtworkCache {
     private let diskURL: URL
 
     private init() {
-        // Use the app's Caches directory (always accessible, survives app restarts)
-        // rather than the App Group container which can fail if entitlements aren't
-        // configured correctly for the device/provisioning profile.
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        diskURL = caches.appendingPathComponent("ArtworkCache", isDirectory: true)
+        // Write to the App Group container so the widget can also read artwork.
+        let appGroup = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: "group.net.mohome.kenopsia")
+        // Fall back to Caches if the App Group container isn't available (e.g. in tests).
+        let base = appGroup ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        diskURL = base.appendingPathComponent("ArtworkCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: diskURL, withIntermediateDirectories: true)
 
         thumbnailCache.countLimit = 500
@@ -93,6 +94,8 @@ final class ArtworkCache {
     private func safeName(_ key: String) -> String {
         key.replacingOccurrences(of: "/", with: "_")
            .replacingOccurrences(of: ":", with: "_")
+           .replacingOccurrences(of: "+", with: "-")
+           .replacingOccurrences(of: "=", with: "")
     }
 }
 

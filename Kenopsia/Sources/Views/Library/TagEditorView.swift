@@ -14,6 +14,8 @@ struct TagEditorView: View {
     @State private var saveError: String?
     @State private var artworkPhotoItem: PhotosPickerItem?
     @State private var pendingArtworkData: Data?
+    @State private var isIdentifying = false
+    @State private var identifyError: String?
 
     private let writer = TagWriter()
 
@@ -51,6 +53,27 @@ struct TagEditorView: View {
                     if let rate = track.sampleRateHz { LabeledContent("Sample Rate", value: "\(rate) Hz") }
                     if let bits = track.bitDepth     { LabeledContent("Bit Depth",   value: "\(bits)-bit") }
                     if let bps  = track.bitrateBps   { LabeledContent("Bitrate",     value: "\(bps / 1000) kbps") }
+                }
+
+                if case .localFile = track.uri {
+                    Section("Auto-Identify") {
+                        Button {
+                            autoIdentify()
+                        } label: {
+                            if isIdentifying {
+                                HStack(spacing: 10) {
+                                    ProgressView()
+                                    Text("Identifying…").foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Label("Identify Track", systemImage: "waveform.and.magnifyingglass")
+                            }
+                        }
+                        .disabled(isIdentifying)
+                        if let err = identifyError {
+                            Text(err).font(.caption).foregroundStyle(.red)
+                        }
+                    }
                 }
 
                 if let err = saveError {
@@ -165,6 +188,31 @@ struct TagEditorView: View {
                     isSaving = false
                 }
             }
+        }
+    }
+
+    private func autoIdentify() {
+        guard case .localFile(let path) = track.uri else { return }
+        isIdentifying = true
+        identifyError = nil
+        Task {
+            do {
+                let meta = try await MusicRecognitionService.shared.recognize(
+                    localURL: URL(fileURLWithPath: path)
+                )
+                // Fill only empty / nil fields so existing tags are not overwritten.
+                if let v = meta.title,  !v.isEmpty, (tags.title  ?? "").isEmpty { tags.title  = v }
+                if let v = meta.artist, !v.isEmpty, (tags.artist ?? "").isEmpty {
+                    tags.artist      = v
+                    if (tags.albumArtist ?? "").isEmpty { tags.albumArtist = v }
+                }
+                if let v = meta.album,  !v.isEmpty, (tags.album  ?? "").isEmpty { tags.album  = v }
+                if let v = meta.genre,  !v.isEmpty, (tags.genre  ?? "").isEmpty { tags.genre  = v }
+                if let v = meta.year,   tags.year == nil                         { tags.year   = v }
+            } catch {
+                identifyError = error.localizedDescription
+            }
+            isIdentifying = false
         }
     }
 

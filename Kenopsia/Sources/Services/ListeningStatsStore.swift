@@ -97,8 +97,10 @@ actor Scrobbler {
 
     // Register your app at https://www.last.fm/api/account/create to get these values.
     private enum Config {
-        static let lastFmAPIKey    = "1b26a89f8c82a74c59162ff3a51f9145"
-        static let lastFmAPISecret = "2140d7adfb1ec7ef1a1c4a26a0a7c22b"
+        // API key and secret are configured by the user in Settings → Scrobbling → Last.fm.
+        // Register your own app at https://www.last.fm/api/account/create.
+        static var lastFmAPIKey:    String { UserDefaults.standard.string(forKey: "lastFmAPIKey")    ?? "" }
+        static var lastFmAPISecret: String { UserDefaults.standard.string(forKey: "lastFmAPISecret") ?? "" }
         static let lastFmEndpoint  = "https://ws.audioscrobbler.com/2.0/"
         static let lbEndpoint      = "https://api.listenbrainz.org/1/submit-listens"
         static let lbValidateURL   = "https://api.listenbrainz.org/1/validate-token"
@@ -108,6 +110,7 @@ actor Scrobbler {
         guard !events.isEmpty else { return }
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: "lastFmEnabled"),
+           !Config.lastFmAPIKey.isEmpty,
            let key = try? KeychainHelper.shared.read(key: "lastfm_session_key") {
             await submitToLastFm(events: events, sessionKey: key)
         }
@@ -119,6 +122,9 @@ actor Scrobbler {
 
     // MARK: - Last.fm auth
     func getMobileSession(username: String, password: String) async throws -> String {
+        guard !Config.lastFmAPIKey.isEmpty else {
+            throw ScrobblerError.lastFmError(code: 0, message: "No API key configured — enter one in Settings")
+        }
         var params: [String: String] = [
             "method":   "auth.getMobileSession",
             "username": username,

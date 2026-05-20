@@ -3,17 +3,36 @@ import AVKit
 
 // MARK: - SettingsView
 struct SettingsView: View {
+    @EnvironmentObject var player: PlayerViewModel
     @AppStorage("crossfadeDuration") var crossfadeDuration: Double = 3
     @AppStorage("crossfadeCurve")    var crossfadeCurve: String = CrossfadeCurve.equalPower.rawValue
     @AppStorage("replayGainMode")    var replayGainMode: String = "track"
-    @AppStorage("vinylAnimation")    var vinylAnimation: Bool = true
-    @AppStorage("karaokeMode")       var karaokeMode: Bool = false
     @AppStorage("lastFmEnabled")     var lastFmEnabled: Bool = false
     @AppStorage("listenBrainzEnabled") var listenBrainzEnabled: Bool = false
+    @AppStorage("appearanceMode")    var appearanceMode = "system"
+    @AppStorage("accentColorHex")    var accentColorHex = "00D9E6"
+    @AppStorage("vuMeterEnabled")    var vuMeterEnabled = true
+
+    private var accentColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(hex: accentColorHex) ?? .kCyan },
+            set: { accentColorHex = $0.hexString }
+        )
+    }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Appearance") {
+                    Picker("Theme", selection: $appearanceMode) {
+                        Text("System").tag("system")
+                        Text("Light").tag("light")
+                        Text("Dark").tag("dark")
+                    }
+                    ColorPicker("Accent Color", selection: accentColorBinding)
+                    Toggle("Spectrum Analyzer", isOn: $vuMeterEnabled)
+                }
+
                 Section("Playback") {
                     VStack(alignment: .leading) {
                         HStack {
@@ -42,11 +61,6 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Now Playing") {
-                    Toggle("Vinyl / CD Spin Animation", isOn: $vinylAnimation)
-                    Toggle("Karaoke Mode", isOn: $karaokeMode)
-                }
-
                 Section("Scrobbling") {
                     Toggle("Last.fm", isOn: $lastFmEnabled)
                     if lastFmEnabled {
@@ -58,8 +72,9 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Output") {
-                    NavigationLink("AirPlay / Bluetooth") { OutputRoutingView() }
+                Section("Library") {
+                    NavigationLink("Artwork Fixer") { ArtworkFixerView() }
+                    NavigationLink("Metadata Fixer") { MetadataFixerView() }
                 }
 
                 Section("About") {
@@ -67,11 +82,12 @@ struct SettingsView: View {
                     NavigationLink("Privacy Policy") { PrivacyPolicyView() }
                     Link(destination: URL(string: "https://buymeacoffee.com/Mo3he")!) {
                         Label("Buy Me a Coffee", systemImage: "cup.and.heat.waves.fill")
-                            .foregroundStyle(.yellow)
                     }
                 }
             }
+            .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -84,7 +100,9 @@ struct SettingsView: View {
 
 // MARK: - Last.fm Settings
 struct LastFmSettingsView: View {
-    @AppStorage("lastFmUsername") private var storedUsername = ""
+    @AppStorage("lastFmUsername")  private var storedUsername = ""
+    @AppStorage("lastFmAPIKey")    private var apiKey = ""
+    @AppStorage("lastFmAPISecret") private var apiSecret = ""
     @State private var username = ""
     @State private var password = ""
     @State private var isConnected = false
@@ -131,9 +149,19 @@ struct LastFmSettingsView: View {
                 }
             }
             Section("About") {
-                Text("Scrobbling sends your listening history to Last.fm. An API key must be configured in the app for this to work.")
+                Text("Scrobbling sends your listening history to Last.fm. Register a free app at last.fm/api to get an API key and secret, then enter them above.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            Section("API Credentials") {
+                TextField("API Key", text: $apiKey)
+                    .textContentType(.none)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .font(.system(.footnote, design: .monospaced))
+                SecureField("API Secret", text: $apiSecret)
+                    .textContentType(.none)
+                    .font(.system(.footnote, design: .monospaced))
             }
         }
         .navigationTitle("Last.fm")

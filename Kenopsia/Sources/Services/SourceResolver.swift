@@ -94,8 +94,7 @@ actor SubsonicSourceAdapter: MusicSourceAdapter {
 
     func streamURL(for trackID: String) async throws -> URL {
         let (salt, token) = try makeAuthTokens()
-        var comps = URLComponents(string: config.serverURL)!
-        comps.path = "/rest/stream.view"
+        var comps = subsonicComponents(restPath: "/rest/stream.view")
         comps.queryItems = authQueryItems(salt: salt, token: token) + [
             URLQueryItem(name: "id",           value: trackID),
             URLQueryItem(name: "maxBitRate",   value: "0"),    // 0 = original quality
@@ -114,8 +113,7 @@ actor SubsonicSourceAdapter: MusicSourceAdapter {
 
         while true {
             let (salt, token) = try makeAuthTokens()
-            var comps = URLComponents(string: config.serverURL)!
-            comps.path = "/rest/getAlbumList2.view"
+            var comps = subsonicComponents(restPath: "/rest/getAlbumList2.view")
             comps.queryItems = authQueryItems(salt: salt, token: token) + [
                 URLQueryItem(name: "type",   value: "alphabeticalByArtist"),
                 URLQueryItem(name: "size",   value: "\(size)"),
@@ -128,10 +126,29 @@ actor SubsonicSourceAdapter: MusicSourceAdapter {
             let albums = response.subsonicResponse.albumList2?.album ?? []
             if albums.isEmpty { break }
 
-            for album in albums {
-                let tracks = try await fetchAlbumTracks(albumID: album.id)
-                allTracks.append(contentsOf: tracks)
+            // Fetch each album's tracks concurrently (up to 8 at a time) to avoid
+            // the N+1 serial-request bottleneck on large libraries.
+            let batchedTracks = try await withThrowingTaskGroup(of: [Track].self) { group in
+                var pending = albums
+                var results: [Track] = []
+                let concurrency = 8
+
+                // Seed initial batch
+                for album in pending.prefix(concurrency) {
+                    group.addTask { try await self.fetchAlbumTracks(albumID: album.id) }
+                }
+                pending = Array(pending.dropFirst(min(concurrency, pending.count)))
+
+                for try await tracks in group {
+                    results.append(contentsOf: tracks)
+                    if let next = pending.first {
+                        pending.removeFirst()
+                        group.addTask { try await self.fetchAlbumTracks(albumID: next.id) }
+                    }
+                }
+                return results
             }
+            allTracks.append(contentsOf: batchedTracks)
             offset += albums.count
             if albums.count < size { break }
         }
@@ -140,8 +157,7 @@ actor SubsonicSourceAdapter: MusicSourceAdapter {
 
     private func fetchAlbumTracks(albumID: String) async throws -> [Track] {
         let (salt, token) = try makeAuthTokens()
-        var comps = URLComponents(string: config.serverURL)!
-        comps.path = "/rest/getAlbum.view"
+        var comps = subsonicComponents(restPath: "/rest/getAlbum.view")
         comps.queryItems = authQueryItems(salt: salt, token: token) + [
             URLQueryItem(name: "id", value: albumID)
         ]
@@ -198,6 +214,15 @@ actor SubsonicSourceAdapter: MusicSourceAdapter {
         let digest = Insecure.MD5.hash(data: Data(string.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
+
+    /// Builds URLComponents for a Subsonic REST endpoint, preserving any base path
+    /// in the server URL so reverse-proxy deployments (e.g. example.com/music) work.
+    private func subsonicComponents(restPath: String) -> URLComponents {
+        var comps = URLComponents(string: config.serverURL) ?? URLComponents()
+        let base = comps.path.hasSuffix("/") ? String(comps.path.dropLast()) : comps.path
+        comps.path = (base == "/" ? "" : base) + restPath
+        return comps
+    }
 }
 
 actor NASSourceAdapter: MusicSourceAdapter {
@@ -211,14 +236,44 @@ actor NASSourceAdapter: MusicSourceAdapter {
     }
 
     func fetchTracks() async throws -> [Track] {
-        // Build the device description URL from host + port.
-        // Real DLNA servers advertise their description URL via SSDP;
-        // here we accept a direct host:port as a fallback for manual NAS config.
-        let scheme = "http"
-        guard let descURL = URL(string: "\(scheme)://\(config.host):\(config.port)/description.xml") else {
+        let descURL = try await resolvedDescriptionURL()
+        return try await browser.browse(serverURL: descURL, sourceID: sourceID)
+    }
+
+    /// Runs SSDP discovery and returns description URLs of any found MediaServers.
+    /// Called from SourceViewModel to let the user pick a discovered server.
+    func discoverServers(timeout: TimeInterval = 5) async -> [URL] {
+        return await browser.discoverServers(timeout: timeout)
+    }
+
+    // If a host is configured, run SSDP filtering to that host first (SSDP returns
+    // the canonical LOCATION URL, which is the only reliable way to find the right path).
+    // Fall back to trying well-known description paths if SSDP times out.
+    // If no host is configured, pick the first SSDP result.
+    private func resolvedDescriptionURL() async throws -> URL {
+        if !config.host.isEmpty {
+            let discovered = await browser.discoverServers(timeout: 3)
+            if let match = discovered.first(where: { $0.host == config.host }) {
+                return match
+            }
+            // SSDP gave nothing for this host — try common description paths.
+            let commonPaths = ["/rootDesc.xml", "/description.xml", "/DeviceDescription.xml"]
+            for path in commonPaths {
+                if let url = URL(string: "http://\(config.host):\(config.port)\(path)") {
+                    if let (_, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200 {
+                        return url
+                    }
+                }
+            }
             throw SourceError.networkUnavailable
         }
-        return try await browser.browse(serverURL: descURL, sourceID: sourceID)
+        // No host configured — attempt SSDP auto-discovery.
+        let discovered = await browser.discoverServers(timeout: 5)
+        guard let first = discovered.first else {
+            throw SourceError.networkUnavailable
+        }
+        return first
     }
 }
 
@@ -226,6 +281,11 @@ actor CloudSourceAdapter: MusicSourceAdapter {
     let sourceID: MusicSourceID
     let provider: CloudProvider
     private var config: CloudSourceConfig
+
+    // Cached B2 auth credentials — valid for up to 24 h per B2 docs.
+    private var b2AuthToken: String?
+    private var b2DownloadBase: String?     // base URL for file downloads (not apiUrl)
+    private var b2ApiURL: String?
 
     init(sourceID: MusicSourceID, config: CloudSourceConfig) {
         self.sourceID = sourceID
@@ -250,81 +310,174 @@ actor CloudSourceAdapter: MusicSourceAdapter {
             return URL(fileURLWithPath: fileID)
 
         case .backblaze:
-            // fileID is the full HTTPS download URL stored during fetchBackblazeTracks
-            guard let url = URL(string: fileID) else { throw SourceError.fileNotFound }
+            // fileID is the full HTTPS download URL stored during fetchBackblazeTracks.
+            // For private buckets we must include the Authorization token.
+            // B2 supports passing the token as a query parameter so AVPlayer can open
+            // the URL directly without custom headers.
+            guard var url = URL(string: fileID) else { throw SourceError.fileNotFound }
+            if let token = try? await authorizeB2().token {
+                var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) ?? URLComponents()
+                var items = comps.queryItems ?? []
+                items.append(URLQueryItem(name: "Authorization", value: token))
+                comps.queryItems = items
+                url = comps.url ?? url
+            }
             return url
         }
     }
 
     // MARK: - iCloud Drive
     private func fetchICloudTracks() async throws -> [Track] {
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = NSMetadataQuery()
-            query.searchScopes = [
-                NSMetadataQueryUbiquitousDocumentsScope,
-                NSMetadataQueryAccessibleUbiquitousExternalDocumentsScope
-            ]
-            let exts = ["mp3", "flac", "m4a", "aac", "wav", "aiff", "ogg", "opus", "wv", "dsf"]
-            query.predicate = NSCompoundPredicate(orPredicateWithSubpredicates:
-                exts.map { NSPredicate(format: "%K ENDSWITH[c] '.%@'", NSMetadataItemFSNameKey, $0) }
-            )
-
-            var observer: Any?
-            observer = NotificationCenter.default.addObserver(
-                forName: .NSMetadataQueryDidFinishGathering, object: query, queue: .main
-            ) { [weak query] _ in
-                guard let q = query else { continuation.resume(returning: []); return }
-                q.stop()
-                if let obs = observer { NotificationCenter.default.removeObserver(obs) }
-
-                let sid = self.sourceID
-                let tracks: [Track] = (0..<q.resultCount).compactMap { i in
-                    guard let item = q.result(at: i) as? NSMetadataItem,
-                          let path = item.value(forAttribute: NSMetadataItemPathKey) as? String else { return nil }
-                    let url = URL(fileURLWithPath: path)
-                    // Trigger download of the stub if not local yet
-                    try? FileManager.default.startDownloadingUbiquitousItem(at: url)
-                    return Track(
-                        title: url.deletingPathExtension().lastPathComponent,
-                        source: sid,
-                        uri: .cloudFile(provider: .iCloud, fileID: path),
-                        format: AudioFormat(fileExtension: url.pathExtension) ?? .mp3,
-                        durationSeconds: 0
-                    )
+        // Phase 1: use NSMetadataQuery to discover files in iCloud ubiquitous storage.
+        // Collect (path, isLocal) pairs inside the completion callback, then resume.
+        struct DiscoveredFile { let path: String; let isLocal: Bool }
+        // All NSMetadataQuery work is confined to the main queue so NSMetadataQuery
+        // (non-Sendable) never crosses a concurrency boundary. Only `continuation`
+        // crosses, and CheckedContinuation is Sendable.
+        let discovered: [DiscoveredFile] = try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.main.async {
+                let query = NSMetadataQuery()
+                query.searchScopes = [
+                    NSMetadataQueryUbiquitousDocumentsScope,
+                    NSMetadataQueryAccessibleUbiquitousExternalDocumentsScope
+                ]
+                let exts = ["mp3", "flac", "m4a", "aac", "wav", "aiff", "ogg", "opus", "wv", "dsf"]
+                query.predicate = NSCompoundPredicate(orPredicateWithSubpredicates:
+                    exts.map { NSPredicate(format: "%K ENDSWITH[c] '.%@'", NSMetadataItemFSNameKey, $0) }
+                )
+                var observer: Any?
+                observer = NotificationCenter.default.addObserver(
+                    forName: .NSMetadataQueryDidFinishGathering, object: query, queue: .main
+                ) { _ in
+                    query.stop()
+                    if let obs = observer { NotificationCenter.default.removeObserver(obs) }
+                    let files: [DiscoveredFile] = (0..<query.resultCount).compactMap { i in
+                        guard let item = query.result(at: i) as? NSMetadataItem,
+                              let path = item.value(forAttribute: NSMetadataItemPathKey) as? String else { return nil }
+                        let statusRaw = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String
+                        let isLocal = statusRaw == NSMetadataUbiquitousItemDownloadingStatusCurrent
+                        return DiscoveredFile(path: path, isLocal: isLocal)
+                    }
+                    continuation.resume(returning: files)
                 }
-                continuation.resume(returning: tracks)
+                query.start()
             }
-            DispatchQueue.main.async { query.start() }
         }
+
+        // Phase 2: for locally downloaded files read full metadata via AVFoundation;
+        // for cloud stubs derive title/artist/album from the path structure.
+        let reader = MetadataReader()
+        let sid = sourceID
+        return await withTaskGroup(of: Track?.self) { group in
+            for file in discovered {
+                group.addTask {
+                    let url = URL(fileURLWithPath: file.path)
+                    try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+                    guard let format = AudioFormat(fileExtension: url.pathExtension) else { return nil }
+
+                    if file.isLocal {
+                        let meta = await reader.read(url: url)
+                        var artKey: String? = nil
+                        if let artData = meta.artworkData, !artData.isEmpty {
+                            artKey = "icloud_\(abs(file.path.hashValue))"
+                            ArtworkCache.shared.store(imageData: artData, forKey: artKey!)
+                        }
+                        return Track(
+                            title:           meta.title ?? url.deletingPathExtension().lastPathComponent,
+                            artist:          meta.artist ?? "",
+                            albumArtist:     meta.albumArtist ?? meta.artist ?? "",
+                            album:           meta.album ?? "",
+                            genre:           meta.genre ?? "",
+                            year:            meta.year,
+                            trackNumber:     meta.trackNumber,
+                            discNumber:      meta.discNumber,
+                            composer:        meta.composer ?? "",
+                            source:          sid,
+                            uri:             .cloudFile(provider: .iCloud, fileID: file.path),
+                            format:          format,
+                            durationSeconds: meta.duration ?? 0,
+                            bitrateBps:      meta.bitrateBps,
+                            sampleRateHz:    meta.sampleRateHz,
+                            bitDepth:        meta.bitDepth,
+                            channelCount:    meta.channelCount,
+                            artworkCacheKey: artKey
+                        )
+                    } else {
+                        // Cloud stub: derive what we can from the path structure.
+                        let (title, artist, album) = CloudSourceAdapter.heuristicMetadata(from: url)
+                        return Track(
+                            title:  title,
+                            artist: artist,
+                            album:  album,
+                            source: sid,
+                            uri:    .cloudFile(provider: .iCloud, fileID: file.path),
+                            format: format,
+                            durationSeconds: 0
+                        )
+                    }
+                }
+            }
+            var results: [Track] = []
+            for await track in group { if let t = track { results.append(t) } }
+            return results
+        }
+    }
+
+    /// Extracts title / artist / album from path components using common folder conventions.
+    /// Handles "Artist/Album/Track.ext" depth; falls back gracefully for shallower trees.
+    static func heuristicMetadata(from url: URL) -> (title: String, artist: String, album: String) {
+        let title  = url.deletingPathExtension().lastPathComponent
+        let parent = url.deletingLastPathComponent().lastPathComponent
+        let grandp = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+        if !grandp.isEmpty && grandp != "." && grandp != "/" {
+            return (title: title, artist: grandp, album: parent)
+        }
+        if !parent.isEmpty && parent != "." && parent != "/" {
+            return (title: title, artist: "", album: parent)
+        }
+        return (title: title, artist: "", album: "")
     }
 
     // MARK: - Backblaze B2
     // Uses the B2 Native API: https://www.backblaze.com/b2/docs/
-    private func fetchBackblazeTracks() async throws -> [Track] {
+
+    /// Returns cached auth credentials or performs a fresh b2_authorize_account call.
+    private func authorizeB2() async throws -> (token: String, apiURL: String, downloadBase: String) {
+        if let token = b2AuthToken, let api = b2ApiURL, let dl = b2DownloadBase {
+            return (token, api, dl)
+        }
         guard !config.accountID.isEmpty,
               let appKey = try? KeychainHelper.shared.read(key: config.keychainKey) else {
             throw SourceError.authenticationFailed
         }
-
-        // 1. Authorize
         let credential = Data("\(config.accountID):\(appKey)".utf8).base64EncodedString()
         var authReq = URLRequest(url: URL(string: "https://api.backblazeb2.com/b2api/v3/b2_authorize_account")!)
         authReq.setValue("Basic \(credential)", forHTTPHeaderField: "Authorization")
         let (authData, _) = try await URLSession.shared.data(for: authReq)
 
         struct B2Auth: Decodable {
-            let apiInfo: APIInfo
             let authorizationToken: String
+            let apiInfo: APIInfo
             struct APIInfo: Decodable {
                 let storageApi: StorageAPI
-                struct StorageAPI: Decodable { let apiUrl: String; let bucketId: String? }
+                struct StorageAPI: Decodable {
+                    let apiUrl: String
+                    let downloadUrl: String     // base URL for file downloads (differs from apiUrl)
+                    let bucketId: String?
+                }
             }
         }
         let auth = try JSONDecoder().decode(B2Auth.self, from: authData)
-        let apiURL = auth.apiInfo.storageApi.apiUrl
-        let authToken = auth.authorizationToken
+        b2AuthToken = auth.authorizationToken
+        b2ApiURL    = auth.apiInfo.storageApi.apiUrl
+        b2DownloadBase = auth.apiInfo.storageApi.downloadUrl
+        return (auth.authorizationToken, auth.apiInfo.storageApi.apiUrl, auth.apiInfo.storageApi.downloadUrl)
+    }
 
-        // 2. List buckets to find audio files
+    private func fetchBackblazeTracks() async throws -> [Track] {
+        let (authToken, apiURL, downloadBase) = try await authorizeB2()
+
+        // 2. List buckets
         var listReq = URLRequest(url: URL(string: "\(apiURL)/b2api/v3/b2_list_buckets")!)
         listReq.setValue(authToken, forHTTPHeaderField: "Authorization")
         let (bucketsData, _) = try await URLSession.shared.data(for: listReq)
@@ -333,14 +486,19 @@ actor CloudSourceAdapter: MusicSourceAdapter {
         struct B2Bucket: Decodable { let bucketId: String; let bucketName: String }
         let buckets = (try? JSONDecoder().decode(B2Buckets.self, from: bucketsData))?.buckets ?? []
 
-        // 3. List files in each bucket
+        // 3. List files in each bucket, optionally scoped to rootPath prefix.
         let audioExts = Set(["mp3", "flac", "m4a", "aac", "wav", "aiff", "ogg", "opus", "wv"])
+        // rootPath "/" means no prefix filter; any other value scopes to that prefix.
+        let prefix = (config.rootPath == "/" || config.rootPath.isEmpty)
+            ? ""
+            : config.rootPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         var tracks: [Track] = []
         for bucket in buckets {
             var startFileName: String? = nil
             repeat {
                 var params: [String: Any] = ["bucketId": bucket.bucketId, "maxFileCount": 1000]
                 if let start = startFileName { params["startFileName"] = start }
+                if !prefix.isEmpty { params["prefix"] = prefix + "/" }
                 var listFilesReq = URLRequest(url: URL(string: "\(apiURL)/b2api/v3/b2_list_file_names")!)
                 listFilesReq.setValue(authToken, forHTTPHeaderField: "Authorization")
                 listFilesReq.httpMethod = "POST"
@@ -355,12 +513,17 @@ actor CloudSourceAdapter: MusicSourceAdapter {
                 for file in list.files {
                     let ext = (file.fileName as NSString).pathExtension.lowercased()
                     guard audioExts.contains(ext) else { continue }
-                    let name = (file.fileName as NSString).lastPathComponent
-                    let downloadURL = "\(apiURL)/file/\(bucket.bucketName)/\(file.fileName)"
+                    // Use downloadBase (not apiURL) for the correct B2 download endpoint.
+                    let downloadURL = "\(downloadBase)/file/\(bucket.bucketName)/\(file.fileName)"
+                    // Derive title/artist/album from the path structure (Artist/Album/Track.ext).
+                    let fileURL = URL(fileURLWithPath: file.fileName)
+                    let (title, artist, album) = CloudSourceAdapter.heuristicMetadata(from: fileURL)
                     tracks.append(Track(
-                        title: (name as NSString).deletingPathExtension,
+                        title:  title,
+                        artist: artist,
+                        album:  album,
                         source: sourceID,
-                        uri: .cloudFile(provider: .backblaze, fileID: downloadURL),
+                        uri:    .cloudFile(provider: .backblaze, fileID: downloadURL),
                         format: AudioFormat(fileExtension: ext) ?? .mp3,
                         durationSeconds: 0
                     ))
@@ -383,7 +546,11 @@ actor WiFiTransferService: MusicSourceAdapter {
     }
 
     func start() async {
-        httpServer = SimpleHTTPServer(port: UInt16(config.port))
+        // Resolve upload password from Keychain if required.
+        let password: String? = config.requiresPassword
+            ? (try? KeychainHelper.shared.read(key: config.keychainKey))
+            : nil
+        httpServer = SimpleHTTPServer(port: UInt16(config.port), uploadPassword: password)
         await httpServer?.start()
     }
 
@@ -400,10 +567,14 @@ actor WiFiTransferService: MusicSourceAdapter {
 
 actor SimpleHTTPServer {
     private let port: UInt16
+    private let uploadPassword: String?   // nil = no auth required
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "net.mohome.kenopsia.http")
 
-    init(port: UInt16) { self.port = port }
+    init(port: UInt16, uploadPassword: String? = nil) {
+        self.port = port
+        self.uploadPassword = uploadPassword
+    }
 
     func start() async {
         do {
@@ -455,12 +626,44 @@ actor SimpleHTTPServer {
         let requestLine = headerStr.components(separatedBy: "\r\n").first ?? ""
 
         if requestLine.hasPrefix("GET") {
+            if !isAuthorised(headers: headerStr) {
+                await sendAuthChallenge(connection); return
+            }
             await sendUploadPage(connection)
         } else if requestLine.hasPrefix("POST /upload") {
+            if !isAuthorised(headers: headerStr) {
+                await sendAuthChallenge(connection); return
+            }
             await handleUpload(connection, headers: headerStr, bodyAlreadyRead: bodyAlreadyRead)
         } else {
             connection.cancel()
         }
+    }
+
+    // MARK: - Basic Auth
+
+    private func isAuthorised(headers: String) -> Bool {
+        guard let password = uploadPassword else { return true }   // no password required
+        // Parse "Authorization: Basic <base64(user:password)>"
+        for line in headers.components(separatedBy: "\r\n") {
+            let lower = line.lowercased()
+            if lower.hasPrefix("authorization: basic ") {
+                let encoded = String(line.dropFirst("authorization: basic ".count))
+                    .trimmingCharacters(in: .whitespaces)
+                guard let decoded = Data(base64Encoded: encoded),
+                      let credentials = String(data: decoded, encoding: .utf8) else { return false }
+                // Accept any username with the correct password
+                let parts = credentials.split(separator: ":", maxSplits: 1)
+                return parts.count == 2 && String(parts[1]) == password
+            }
+        }
+        return false
+    }
+
+    private func sendAuthChallenge(_ connection: NWConnection) async {
+        let resp = "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"Kenopsia Upload\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        await asyncSend(connection, data: Data(resp.utf8))
+        connection.cancel()
     }
 
     // MARK: - Upload handling
@@ -574,8 +777,9 @@ actor SimpleHTTPServer {
             guard let headerStr = String(data: headerData, encoding: .utf8),
                   let filenameRange = headerStr.range(of: "filename=\"") else { continue }
             let filename = String(headerStr[filenameRange.upperBound...].prefix(while: { $0 != "\"" }))
+            let ext = URL(fileURLWithPath: filename).pathExtension
             guard !filename.isEmpty,
-                  AudioFormat(fileExtension: URL(fileURLWithPath: filename).pathExtension) != nil else { continue }
+                  AudioFormat(fileExtension: ext) != nil else { continue }
             let dest = destinationRoot.appendingPathComponent(filename)
             do {
                 try Data(fileBodyData).write(to: dest)

@@ -63,6 +63,7 @@ final class LibraryStore: ObservableObject {
         }
         rebuildDerivedCollections()
         save()
+        NotificationCenter.default.post(name: .libraryDidChange, object: nil)
     }
 
     func update(track: Track) {
@@ -75,6 +76,14 @@ final class LibraryStore: ObservableObject {
         tracks.removeValue(forKey: trackID)
         rebuildDerivedCollections()
         save()
+        NotificationCenter.default.post(name: .libraryDidChange, object: nil)
+    }
+
+    func removeTracks(from sourceID: MusicSourceID) {
+        tracks = tracks.filter { $0.value.source != sourceID }
+        rebuildDerivedCollections()
+        save()
+        NotificationCenter.default.post(name: .libraryDidChange, object: nil)
     }
 
     func save(playlist: Playlist) {
@@ -110,15 +119,30 @@ final class LibraryStore: ObservableObject {
         }
         albums = albumMap
 
+        // Sort each album's tracks by disc number then track number so the
+        // order is deterministic regardless of dictionary-iteration order.
+        for key in albums.keys {
+            albums[key]?.trackIDs.sort { lhsID, rhsID in
+                guard let lhs = tracks[lhsID], let rhs = tracks[rhsID] else { return false }
+                let lDisc = lhs.discNumber ?? 1
+                let rDisc = rhs.discNumber ?? 1
+                if lDisc != rDisc { return lDisc < rDisc }
+                return (lhs.trackNumber ?? 0) < (rhs.trackNumber ?? 0)
+            }
+        }
+
         // Artists
         var artistMap: [String: Artist] = [:]
         for album in albumMap.values {
             let key = album.artist.lowercased()
             if var artist = artistMap[key] {
                 if !artist.albumIDs.contains(album.id) { artist.albumIDs.append(album.id) }
+                // Prefer an album that has artwork over one that doesn't.
+                if artist.artworkCacheKey == nil { artist.artworkCacheKey = album.artworkCacheKey }
                 artistMap[key] = artist
             } else {
-                artistMap[key] = Artist(id: key, name: album.artist, albumIDs: [album.id])
+                artistMap[key] = Artist(id: key, name: album.artist, albumIDs: [album.id],
+                                        artworkCacheKey: album.artworkCacheKey)
             }
         }
         artists = artistMap
@@ -147,4 +171,8 @@ final class LibraryStore: ObservableObject {
         playlists = Dictionary(uniqueKeysWithValues: payload.playlists.map { ($0.id, $0) })
         rebuildDerivedCollections()
     }
+}
+
+extension Notification.Name {
+    static let libraryDidChange = Notification.Name("net.mohome.kenopsia.libraryDidChange")
 }

@@ -33,7 +33,8 @@ final class WatchConnectivityService: NSObject {
     }
 
     private func push(state: PlayerState) {
-        guard WCSession.default.activationState == .activated else { return }
+        guard WCSession.default.activationState == .activated,
+              WCSession.default.isWatchAppInstalled else { return }
 
         var context: [String: Any] = [
             "status":   state.status.rawValue,

@@ -14,7 +14,8 @@ final class SourceViewModel: ObservableObject {
     // Keeps security-scoped folder URLs alive so AVAudioFile can open files
     // in user-selected local folders throughout the app's lifetime.
     private var localScopeURLs: [MusicSourceID: URL] = [:]
-
+    // Active scan tasks — stored so they can be cancelled by the user.
+    private var scanTasks: [MusicSourceID: Task<Void, Never>] = [:]
     private let resolver: SourceResolver
     private var wifiService: WiFiTransferService?
     private var wifiUploadObserver: NSObjectProtocol?
@@ -40,18 +41,54 @@ final class SourceViewModel: ObservableObject {
 
     func update(source: MusicSource) {
         guard let idx = sources.firstIndex(where: { $0.id == source.id }) else { return }
+        let old = sources[idx]
         sources[idx] = source
         registerAdapter(for: source)
+        // If the pin was toggled off, evict all cached files for this source.
+        if old.isPinnedOffline && !source.isPinnedOffline {
+            Task { await OfflineCacheService.shared.unpinSource(sourceID: source.id) }
+        }
+        // If the pin was just toggled ON, start caching tracks for offline use.
+        if !old.isPinnedOffline && source.isPinnedOffline {
+            let src = source
+            Task { [weak self] in
+                guard let self else { return }
+                let tracks = Array(LibraryStore.shared.tracks.values.filter { $0.source == src.id })
+                if !tracks.isEmpty {
+                    await OfflineCacheService.shared.pinSource(src, tracks: tracks, resolver: self.resolver)
+                } else {
+                    // No tracks yet — trigger a scan which will pin at the end.
+                    self.scan(source: src)
+                }
+            }
+        }
         save()
     }
 
+    /// Cancel an in-progress scan for the given source.
+    func cancelScan(for sourceID: MusicSourceID) {
+        scanTasks[sourceID]?.cancel()
+        scanTasks.removeValue(forKey: sourceID)
+    }
+
     func delete(sourceID: MusicSourceID) {
-        if let source = sources.first(where: { $0.id == sourceID }),
-           let url = localScopeURLs.removeValue(forKey: sourceID) {
-            _ = source  // suppress unused warning
-            url.stopAccessingSecurityScopedResource()
+        cancelScan(for: sourceID)
+        if let source = sources.first(where: { $0.id == sourceID }) {
+            // Revoke security-scoped access for local sources.
+            localScopeURLs.removeValue(forKey: sourceID)?.stopAccessingSecurityScopedResource()
+            // Delete Keychain entries so credentials are not orphaned.
+            switch source.config {
+            case .subsonic(let c):     if !c.keychainKey.isEmpty { KeychainHelper.shared.delete(key: c.keychainKey) }
+            case .nas(let c):          if !c.keychainKey.isEmpty { KeychainHelper.shared.delete(key: c.keychainKey) }
+            case .cloud(let c):        if !c.keychainKey.isEmpty { KeychainHelper.shared.delete(key: c.keychainKey) }
+            case .wifiTransfer(let c): if !c.keychainKey.isEmpty { KeychainHelper.shared.delete(key: c.keychainKey) }
+            default: break
+            }
+            // Evict offline cache.
+            Task { await OfflineCacheService.shared.unpinSource(sourceID: sourceID) }
         }
         sources.removeAll { $0.id == sourceID }
+        LibraryStore.shared.removeTracks(from: sourceID)
         save()
     }
 
@@ -62,7 +99,10 @@ final class SourceViewModel: ObservableObject {
             completion?("Source is disabled")
             return
         }
-        Task {
+        // Cancel any existing scan for this source before starting a new one.
+        scanTasks[source.id]?.cancel()
+        let task = Task {
+            defer { scanTasks.removeValue(forKey: source.id) }
             do {
                 let tracks: [Track]
                 switch source.config {
@@ -85,6 +125,12 @@ final class SourceViewModel: ObservableObject {
                     let scopeURL = localScopeURLs[source.id] ?? url
                     let scanner = LibraryScanner(store: LibraryStore.shared)
                     tracks = await scanner.scan(source: source, urls: [scopeURL])
+                    // LibraryScanner.scan() calls store.merge() internally before returning.
+                    // If the source was deleted while the scan was running, undo that merge now.
+                    if !self.sources.contains(where: { $0.id == source.id }) {
+                        LibraryStore.shared.removeTracks(from: source.id)
+                        return
+                    }
 
                 case .subsonic:
                     guard let adapter = await resolver.adapter(for: source.id) as? SubsonicSourceAdapter else {
@@ -92,6 +138,7 @@ final class SourceViewModel: ObservableObject {
                         return
                     }
                     tracks = try await adapter.fetchTracks()
+                    try Task.checkCancellation()
                     LibraryStore.shared.merge(tracks: tracks, from: source.id)
 
                 case .nas:
@@ -100,6 +147,7 @@ final class SourceViewModel: ObservableObject {
                         return
                     }
                     tracks = try await adapter.fetchTracks()
+                    try Task.checkCancellation()
                     LibraryStore.shared.merge(tracks: tracks, from: source.id)
 
                 case .webRadio(let cfg):
@@ -118,6 +166,7 @@ final class SourceViewModel: ObservableObject {
                             durationSeconds: 0   // live stream — duration unknown
                         )
                     }
+                    try Task.checkCancellation()
                     LibraryStore.shared.merge(tracks: tracks, from: source.id)
 
                 case .cloud:
@@ -126,6 +175,7 @@ final class SourceViewModel: ObservableObject {
                         return
                     }
                     tracks = try await adapter.fetchTracks()
+                    try Task.checkCancellation()
                     LibraryStore.shared.merge(tracks: tracks, from: source.id)
 
                 case .appleMusic:
@@ -134,6 +184,7 @@ final class SourceViewModel: ObservableObject {
                         return
                     }
                     tracks = try await adapter.fetchTracks()
+                    try Task.checkCancellation()
                     LibraryStore.shared.merge(tracks: tracks, from: source.id)
 
                 default:
@@ -144,14 +195,25 @@ final class SourceViewModel: ObservableObject {
                 let count = tracks.count
                 completion?(count == 0 ? "No tracks found" : "Found \(count) track\(count == 1 ? "" : "s")")
 
+                // Persist the track count and scan timestamp so the source row can
+                // show status without querying the full library each render.
+                if let idx = self.sources.firstIndex(where: { $0.id == source.id }) {
+                    self.sources[idx].trackCount = count
+                    self.sources[idx].lastScanDate = Date()
+                    self.save()
+                }
+
                 // If the source is pinned for offline, cache all tracks now.
                 if source.isPinnedOffline && !tracks.isEmpty {
                     await OfflineCacheService.shared.pinSource(source, tracks: tracks, resolver: resolver)
                 }
+            } catch is CancellationError {
+                completion?("Scan cancelled")
             } catch {
                 completion?("Error: \(error.localizedDescription)")
             }
         }
+        scanTasks[source.id] = task
     }
 
     // MARK: - Wi-Fi Transfer
@@ -163,7 +225,8 @@ final class SourceViewModel: ObservableObject {
         Task {
             await svc.start()
             wifiTransferActive = true
-            wifiTransferURL = "http://\(localIPAddress() ?? "device"):8383"
+            let port = config.port
+            wifiTransferURL = "http://\(localIPAddress() ?? "device"):\(port)"
         }
         // Observe uploads so we auto-scan newly received files into the library.
         // Remove any existing observer first to avoid stacking duplicates on restart.
@@ -188,6 +251,22 @@ final class SourceViewModel: ObservableObject {
         guard let svc = wifiService else { return }
         Task { await svc.stop(); wifiTransferActive = false; wifiTransferURL = nil }
         wifiService = nil
+    }
+
+    /// Update Wi-Fi Transfer password settings. Restarts the service if it is active.
+    func updateWiFiTransferConfig(requiresPassword: Bool, password: String) {
+        guard let idx = sources.firstIndex(where: { $0.kind == .wifiTransfer }),
+              case .wifiTransfer(var cfg) = sources[idx].config else { return }
+        cfg.requiresPassword = requiresPassword
+        if requiresPassword {
+            let key = cfg.keychainKey.isEmpty ? "wifi_\(sources[idx].id.rawValue)" : cfg.keychainKey
+            try? KeychainHelper.shared.save(key: key, value: password)
+            cfg.keychainKey = key
+        }
+        sources[idx].config = .wifiTransfer(cfg)
+        save()
+        // If the server is running, restart it so the new password takes effect.
+        if wifiTransferActive { stopWiFiTransfer(); startWiFiTransfer() }
     }
 
     // MARK: - Apple Music

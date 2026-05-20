@@ -1,85 +1,61 @@
 import SwiftUI
+import AVKit
+import MediaPlayer
 
 // MARK: - NowPlayingView
-/// Full-screen Now Playing. Adaptive colour theming from album art.
 struct NowPlayingView: View {
     @EnvironmentObject var player: PlayerViewModel
-    @State private var dominantColor: Color = .black
+    @Environment(\.kAccent) var accent
+    @AppStorage("vuMeterEnabled") var vuMeterEnabled = true
     @State private var showingLyrics = false
     @State private var showingEQ = false
+    @State private var vuLevels: [CGFloat] = Array(repeating: 0, count: 14)
+    @State private var peakLevels: [CGFloat] = Array(repeating: 0, count: 14)
+    @State private var peakDecayCounters: [Int] = Array(repeating: 0, count: 14)
 
     var body: some View {
         ZStack {
-            // Full-bleed background tinted by artwork palette
-            dominantColor
-                .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.6), value: dominantColor)
-
+            Color.kBackground.ignoresSafeArea()
             VStack(spacing: 0) {
-                // Dismiss handle
-                RoundedRectangle(cornerRadius: 3)
-                    .frame(width: 36, height: 5)
-                    .foregroundStyle(.white.opacity(0.4))
-                    .padding(.top, 12)
+                handleBar
+                breadcrumb
+                    .padding(.top, 4)
 
-                // Artwork / Lyrics toggle
                 if showingLyrics {
                     LyricsView(lines: player.lyrics, position: player.state.positionSeconds)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .transition(.opacity)
+                        .padding(.horizontal, 24)
                 } else {
-                    SpinningArtworkView(
-                        cacheKey: player.queue.currentTrack?.artworkCacheKey ?? player.state.nowPlayingArtworkCacheKey,
-                        isPlaying: player.state.status == .playing
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onTapGesture { withAnimation { showingLyrics.toggle() } }
-                    .transition(.opacity)
+                    artworkDisplay
                 }
 
-                // Metadata
-                TrackMetadataRow(track: player.queue.currentTrack)
+                trackInfo
+
+                Spacer(minLength: 0)
+
+                audioInfoRow
+
+                progressSection
                     .padding(.horizontal, 24)
+                    .padding(.bottom, 8)
 
-                // Progress bar
-                ProgressSlider(
-                    value: player.state.positionSeconds,
-                    total: player.state.durationSeconds
-                ) { player.seek(to: $0) }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
+                if vuMeterEnabled, !isAppleMusicTrack {
+                    vuMeter
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 14)
+                }
 
-                // Transport controls
                 TransportControls()
                     .environmentObject(player)
                     .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
 
-                // Volume
-                VolumeSlider(volume: player.state.volume) { player.setVolume($0) }
+                volumeRow
                     .padding(.horizontal, 32)
-                    .padding(.top, 8)
+                    .padding(.bottom, 8)
 
-                // Bottom toolbar
-                HStack {
-                    Button { showingEQ.toggle() } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    Spacer()
-                    Button { player.showingQueue.toggle() } label: {
-                        Image(systemName: "list.bullet")
-                    }
-                    Spacer()
-                    ShareLink(
-                        item: player.queue.currentTrack?.title ?? "",
-                        subject: Text("Listening to")
-                    ) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                }
-                .font(.title2)
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 32)
-                .padding(.vertical, 16)
+                bottomToolbar
             }
         }
         .foregroundStyle(.white)
@@ -89,24 +65,327 @@ struct NowPlayingView: View {
         .sheet(isPresented: $player.showingQueue) {
             QueueView().environmentObject(player)
         }
-        .onChange(of: player.queue.currentTrack?.artworkCacheKey) {
-            updateDominantColor()
-        }
-        .onChange(of: player.state.nowPlayingArtworkCacheKey) {
-            updateDominantColor()
+        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+            updateVULevels()
         }
     }
 
-    private func updateDominantColor() {
-        let key = player.queue.currentTrack?.artworkCacheKey ?? player.state.nowPlayingArtworkCacheKey
-        guard let key, let image = ArtworkCache.shared.fullImage(forKey: key) else {
-            dominantColor = .black
-            return
+    // MARK: - Sub-views
+
+    private var handleBar: some View {
+        RoundedRectangle(cornerRadius: 2.5)
+            .fill(Color.white.opacity(0.18))
+            .frame(width: 36, height: 4)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
+    }
+
+    private var breadcrumb: some View {
+        HStack(spacing: 6) {
+            Text("NOW PLAYING")
+                .foregroundStyle(.white.opacity(0.75))
+            Spacer()
         }
-        Task.detached(priority: .userInitiated) {
-            let color = image.dominantColor()
-            await MainActor.run { dominantColor = Color(color) }
+        .font(.system(size: 12, weight: .bold))
+        .tracking(1.5)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 10)
+    }
+
+    private var artworkDisplay: some View {
+        AlbumArtView(
+            cacheKey: player.queue.currentTrack?.artworkCacheKey ?? player.state.nowPlayingArtworkCacheKey
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 40)
+        .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { showingLyrics.toggle() } }
+        .transition(.opacity)
+    }
+
+    private var trackInfo: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(player.queue.currentTrack?.title ?? "NOT PLAYING")
+                    .font(.system(.title3, design: .default).bold())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text((player.queue.currentTrack?.artist ?? "").uppercased())
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(1.0)
+                        .foregroundStyle(.white.opacity(0.4))
+                    if let year = player.queue.currentTrack?.year {
+                        Text("·").foregroundStyle(.white.opacity(0.2))
+                        Text(String(year))
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(0.5)
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
+                }
+            }
+            Spacer()
+            Button {
+                player.toggleFavourite()
+            } label: {
+                Image(systemName: player.queue.currentTrack?.isFavourited == true ? "heart.fill" : "heart")
+                    .foregroundStyle(
+                        player.queue.currentTrack?.isFavourited == true ? accent : Color.white.opacity(0.35)
+                    )
+            }
+            .font(.title2)
         }
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+    }
+
+    private var progressSection: some View {
+        VStack(spacing: 6) {
+            ScrubBar()
+                .environmentObject(player)
+            HStack {
+                Text(formatTime(player.state.positionSeconds))
+                    .foregroundStyle(accent)
+                Spacer()
+                Text("-\(formatTime(max(player.state.durationSeconds - player.state.positionSeconds, 0)))")
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+            .font(.system(size: 11, design: .monospaced))
+        }
+    }
+
+    private var audioInfoRow: some View {
+        Group {
+            if let track = player.queue.currentTrack {
+                HStack(spacing: 8) {
+                    FormatBadge(track: track)
+                    if track.isLossless {
+                        audioChip("LOSSLESS")
+                    } else if let bps = track.bitrateBps, bps > 0 {
+                        audioChip("\(bps / 1000) KBPS")
+                    }
+                    if let rate = track.sampleRateHz {
+                        audioChip(String(format: "%.1f KHZ", Double(rate) / 1000.0))
+                    }
+                    if let depth = track.bitDepth {
+                        audioChip("\(depth)-BIT")
+                    }
+                    if let channels = track.channelCount {
+                        audioChip(channels == 1 ? "MONO" : "STEREO")
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
+            }
+        }
+    }
+
+    private func audioChip(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+            .tracking(0.5)
+            .foregroundStyle(.white.opacity(0.3))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .overlay(
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+            )
+    }
+
+    private var vuMeter: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 2) {
+                ForEach(0..<vuLevels.count, id: \.self) { i in
+                    RetroVUBar(level: vuLevels[i], peak: peakLevels[i])
+                }
+            }
+            .frame(height: 40)
+            // Frequency labels
+            HStack(alignment: .top, spacing: 0) {
+                Text("32").frame(maxWidth: .infinity, alignment: .leading)
+                Text("100").frame(maxWidth: .infinity)
+                Text("500").frame(maxWidth: .infinity)
+                Text("2K").frame(maxWidth: .infinity)
+                Text("8K").frame(maxWidth: .infinity)
+                Text("16K").frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .font(.system(size: 7, weight: .semibold, design: .monospaced))
+            .tracking(0.3)
+            .foregroundStyle(.white.opacity(0.2))
+        }
+    }
+
+    private var volumeRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.35))
+            SystemVolumeSlider(tintColor: UIColor(accent))
+                .frame(height: 28)
+            Image(systemName: "speaker.wave.3.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.35))
+        }
+    }
+
+    private var bottomToolbar: some View {
+        HStack {
+            Button { showingEQ.toggle() } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: "slider.horizontal.3")
+                    Text("EQ")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(1)
+                }
+            }
+            Spacer()
+            Button { player.showingQueue.toggle() } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: "list.bullet")
+                    Text("QUEUE")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(1)
+                }
+            }
+            Spacer()
+            VStack(spacing: 3) {
+                AirPlayButtonView()
+                    .frame(width: 22, height: 20)
+                Text("OUTPUT")
+                    .font(.system(size: 8, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+            Spacer()
+            ShareLink(
+                item: player.queue.currentTrack?.title ?? "",
+                subject: Text("Listening to")
+            ) {
+                VStack(spacing: 3) {
+                    Image(systemName: "square.and.arrow.up")
+                    Text("SHARE")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(1)
+                }
+            }
+        }
+        .font(.system(size: 18))
+        .foregroundStyle(.white.opacity(0.45))
+        .padding(.horizontal, 32)
+        .padding(.vertical, 14)
+    }
+
+    // MARK: - VU animation
+
+    private var isAppleMusicTrack: Bool {
+        if case .appleMusicID = player.queue.currentTrack?.uri { return true }
+        return false
+    }
+
+    private func updateVULevels() {
+        let rawLevels = player.meterLevels
+        let isPlaying = player.state.status == .playing
+
+        for i in 0..<vuLevels.count {
+            let raw = i < rawLevels.count ? Double(rawLevels[i]) : 0
+            // Low-frequency bands contain only 1-5 FFT bins, so their mean IS a raw
+            // bin magnitude that can easily reach -6 dBFS for any strong bass note.
+            // Use a full 90 dB window [−90 dBFS, 0 dBFS] → [0, 1] so the ceiling
+            // is true full-scale digital and nothing maxes out during normal playback.
+            let dbfs = raw > 0 ? 20.0 * log10(raw) : -100.0
+            let normalized = CGFloat(max(0, min(1, (dbfs + 90.0) / 90.0)))
+
+            if isPlaying {
+                // Fast attack, slow decay
+                if normalized > vuLevels[i] {
+                    vuLevels[i] = normalized * 0.65 + vuLevels[i] * 0.35
+                } else {
+                    vuLevels[i] = vuLevels[i] * 0.72
+                }
+            } else {
+                vuLevels[i] = max(0, vuLevels[i] * 0.78)
+            }
+
+            // Peak hold
+            if vuLevels[i] > peakLevels[i] {
+                peakLevels[i] = vuLevels[i]
+                peakDecayCounters[i] = 10
+            } else if peakDecayCounters[i] > 0 {
+                peakDecayCounters[i] -= 1
+            } else {
+                peakLevels[i] = max(0, peakLevels[i] - 0.025)
+            }
+        }
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+// MARK: - FormatBadge
+struct FormatBadge: View {
+    let track: Track
+    @Environment(\.kAccent) var accent
+    var body: some View {
+        Text(track.format.displayName)
+            .font(.system(size: 8, weight: .bold))
+            .tracking(0.8)
+            .foregroundStyle(track.isLossless ? accent : Color.white.opacity(0.4))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(
+                        track.isLossless ? accent.opacity(0.5) : Color.white.opacity(0.2),
+                        lineWidth: 0.75
+                    )
+            )
+    }
+}
+
+// MARK: - ScrubBar
+/// Progress bar with drag-to-seek. Displays the drag position while scrubbing
+/// so the position timer doesn't fight the gesture.
+struct ScrubBar: View {
+    @EnvironmentObject var player: PlayerViewModel
+    @Environment(\.kAccent) var accent
+    @State private var isDragging = false
+    @State private var dragRatio: Double = 0
+
+    private var displayRatio: Double {
+        isDragging ? dragRatio : player.state.progress
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.1))
+                Capsule()
+                    .fill(accent)
+                    .frame(width: max(0, geo.size.width * CGFloat(displayRatio)))
+            }
+            .frame(height: isDragging ? 5 : 3)
+            .animation(.easeInOut(duration: 0.1), value: isDragging)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        isDragging = true
+                        dragRatio = min(1, max(0, Double(v.location.x / geo.size.width)))
+                    }
+                    .onEnded { v in
+                        let ratio = min(1, max(0, Double(v.location.x / geo.size.width)))
+                        player.seek(to: player.state.durationSeconds * ratio)
+                        isDragging = false
+                    }
+            )
+        }
+        .frame(height: 10)   // generous tap target; visual bar is smaller via frame(height:) inside
+        .contentShape(Rectangle())
     }
 }
 
@@ -122,18 +401,18 @@ struct AlbumArtView: View {
                     .resizable()
                     .scaledToFit()
             } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.white.opacity(0.15))
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(0.07))
+                    .aspectRatio(1, contentMode: .fit)
                     .overlay {
                         Image(systemName: "music.note")
-                            .font(.system(size: 60))
-                            .foregroundStyle(.white.opacity(0.4))
+                            .font(.system(size: 48))
+                            .foregroundStyle(.white.opacity(0.2))
                     }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(radius: 20)
-        .padding(32)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .shadow(color: .black.opacity(0.45), radius: 28, x: 0, y: 10)
         .onAppear { loadArtwork() }
         .onChange(of: cacheKey) { _, _ in loadArtwork() }
         .onReceive(NotificationCenter.default.publisher(for: ArtworkCache.artworkDidUpdate)) { notification in
@@ -149,7 +428,179 @@ struct AlbumArtView: View {
     }
 }
 
-// MARK: - TrackMetadataRow
+// MARK: - RetroVUBar
+/// Segmented LED-style column for the retro spectrum analyzer.
+struct RetroVUBar: View {
+    let level: CGFloat   // 0...1 smoothed RMS
+    let peak: CGFloat    // 0...1 peak hold
+
+    private let segments = 10
+
+    private var litCount: Int { Int(level * CGFloat(segments)) }
+    private var peakIdx: Int  { min(Int(peak * CGFloat(segments)), segments - 1) }
+
+    var body: some View {
+        VStack(spacing: 1) {
+            ForEach((0..<segments).reversed(), id: \.self) { i in
+                let isLit     = i < litCount
+                let isPeakDot = i == peakIdx && peakIdx > litCount
+                Rectangle()
+                    .fill(
+                        isLit      ? segmentColor(i) :
+                        isPeakDot  ? segmentColor(i).opacity(0.75) :
+                                     Color.white.opacity(0.05)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private func segmentColor(_ index: Int) -> Color {
+        let n = CGFloat(index) / CGFloat(segments - 1)
+        if n < 0.60 { return Color(red: 0.10, green: 0.95, blue: 0.30) }  // phosphor green
+        if n < 0.85 { return Color(red: 1.00, green: 0.75, blue: 0.00) }  // amber
+        return            Color(red: 1.00, green: 0.20, blue: 0.10)        // red
+    }
+}
+
+// MARK: - AirPlayButtonView
+struct AirPlayButtonView: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let picker = AVRoutePickerView()
+        picker.tintColor = UIColor.white.withAlphaComponent(0.45)
+        picker.activeTintColor = UIColor(red: 0.0, green: 0.85, blue: 0.90, alpha: 1.0)
+        return picker
+    }
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+
+// MARK: - SystemVolumeSlider
+struct SystemVolumeSlider: UIViewRepresentable {
+    let tintColor: UIColor
+    func makeUIView(context: Context) -> MPVolumeView {
+        let view = MPVolumeView()
+        // showsRouteButton is deprecated in iOS 13; suppress via KVC to avoid the warning.
+        view.setValue(false, forKey: "showsRouteButton")
+        view.tintColor = tintColor
+        return view
+    }
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {
+        uiView.tintColor = tintColor
+    }
+}
+
+// MARK: - TransportControls
+struct TransportControls: View {
+    @EnvironmentObject var player: PlayerViewModel
+    @Environment(\.kAccent) var accent
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button { player.queue.toggleShuffle() } label: {
+                Image(systemName: "shuffle")
+                    .opacity(player.queue.shuffleMode == .on ? 1 : 0.35)
+                    .foregroundStyle(player.queue.shuffleMode == .on ? accent : .white)
+            }
+            Spacer()
+            Button { player.previous() } label: {
+                Image(systemName: "backward.fill")
+                    .font(.title)
+                    .foregroundStyle(.white)
+            }
+            Spacer()
+            Button { player.togglePlayPause() } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 72, height: 72)
+                    Image(systemName: player.state.status == .playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(.white)
+                        .offset(x: player.state.status == .playing ? 0 : 2)
+                }
+            }
+            Spacer()
+            Button { player.next() } label: {
+                Image(systemName: "forward.fill")
+                    .font(.title)
+                    .foregroundStyle(.white)
+            }
+            Spacer()
+            Button {
+                let modes: [RepeatMode] = [.off, .all, .one]
+                let idx = ((modes.firstIndex(of: player.queue.repeatMode) ?? 0) + 1) % modes.count
+                player.queue.repeatMode = modes[idx]
+            } label: {
+                Image(systemName: player.queue.repeatMode == .one ? "repeat.1" : "repeat")
+                    .opacity(player.queue.repeatMode == .off ? 0.35 : 1)
+                    .foregroundStyle(player.queue.repeatMode == .off ? .white : accent)
+            }
+        }
+        .font(.title2)
+    }
+}
+
+// MARK: - ProgressSlider (retained for backward compatibility)
+struct ProgressSlider: View {
+    let value: Double
+    let total: Double
+    let onSeek: (Double) -> Void
+    @State private var isDragging = false
+    @State private var dragValue: Double = 0
+
+    var displayValue: Double { isDragging ? dragValue : value }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Slider(
+                value: Binding(
+                    get: { displayValue },
+                    set: { dragValue = $0; isDragging = true }
+                ),
+                in: 0...max(total, 1)
+            ) { editing in
+                if !editing { onSeek(dragValue); isDragging = false }
+            }
+            .tint(.kCyan)
+            HStack {
+                Text(formatTime(displayValue))
+                Spacer()
+                Text("-\(formatTime(max(total - displayValue, 0)))")
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.white.opacity(0.5))
+        }
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+// MARK: - VolumeSlider (retained for backward compatibility)
+struct VolumeSlider: View {
+    let volume: Float
+    let onChange: (Float) -> Void
+    @Environment(\.kAccent) var accent
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "speaker.fill")
+                .foregroundStyle(.white.opacity(0.4))
+            Slider(
+                value: Binding(get: { Double(volume) }, set: { onChange(Float($0)) }),
+                in: 0...1
+            )
+            .tint(accent)
+            Image(systemName: "speaker.wave.3.fill")
+                .foregroundStyle(.white.opacity(0.4))
+        }
+        .font(.caption)
+    }
+}
+
+// MARK: - TrackMetadataRow (retained for potential external use)
 struct TrackMetadataRow: View {
     let track: Track?
 
@@ -172,115 +623,24 @@ struct TrackMetadataRow: View {
             } label: {
                 Image(systemName: track?.isFavourited == true ? "heart.fill" : "heart")
                     .font(.title2)
-                    .foregroundStyle(track?.isFavourited == true ? .pink : .white.opacity(0.6))
+                    .foregroundStyle(track?.isFavourited == true ? Color.kCyan : Color.white.opacity(0.6))
             }
         }
     }
 }
 
-// MARK: - TransportControls
-struct TransportControls: View {
-    @EnvironmentObject var player: PlayerViewModel
+// MARK: - SpinningArtworkView (stub - retained to avoid breaking existing references)
+struct SpinningArtworkView: View {
+    let cacheKey: String?
+    let isPlaying: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button { player.queue.toggleShuffle() } label: {
-                Image(systemName: "shuffle")
-                    .opacity(player.queue.shuffleMode == .on ? 1 : 0.4)
-                    .foregroundStyle(player.queue.shuffleMode == .on ? Color.accentColor : .white)
-            }
-            Spacer()
-            Button { player.previous() } label: {
-                Image(systemName: "backward.fill")
-                    .font(.title)
-            }
-            Spacer()
-            Button { player.togglePlayPause() } label: {
-                Image(systemName: player.state.status == .playing ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 64))
-            }
-            Spacer()
-            Button { player.next() } label: {
-                Image(systemName: "forward.fill")
-                    .font(.title)
-            }
-            Spacer()
-            Button {
-                let modes: [RepeatMode] = [.off, .all, .one]
-                let idx = ((modes.firstIndex(of: player.queue.repeatMode) ?? 0) + 1) % modes.count
-                player.queue.repeatMode = modes[idx]
-            } label: {
-                Image(systemName: player.queue.repeatMode == .one ? "repeat.1" : "repeat")
-                    .opacity(player.queue.repeatMode == .off ? 0.4 : 1)
-            }
-        }
-        .font(.title2)
-        .foregroundStyle(.white)
+        AlbumArtView(cacheKey: cacheKey)
     }
 }
 
-// MARK: - ProgressSlider
-struct ProgressSlider: View {
-    let value: Double
-    let total: Double
-    let onSeek: (Double) -> Void
-    @State private var isDragging = false
-    @State private var dragValue: Double = 0
-
-    var displayValue: Double { isDragging ? dragValue : value }
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Slider(
-                value: Binding(
-                    get: { displayValue },
-                    set: { dragValue = $0; isDragging = true }
-                ),
-                in: 0...max(total, 1)
-            ) { editing in
-                if !editing { onSeek(dragValue); isDragging = false }
-            }
-            .tint(.white)
-            HStack {
-                Text(formatTime(displayValue))
-                Spacer()
-                Text("-\(formatTime(max(total - displayValue, 0)))")
-            }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.white.opacity(0.6))
-        }
-    }
-
-    private func formatTime(_ seconds: Double) -> String {
-        let s = Int(seconds)
-        return String(format: "%d:%02d", s / 60, s % 60)
-    }
-}
-
-// MARK: - VolumeSlider
-struct VolumeSlider: View {
-    let volume: Float
-    let onChange: (Float) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "speaker.fill")
-                .foregroundStyle(.white.opacity(0.5))
-            Slider(
-                value: Binding(get: { Double(volume) }, set: { onChange(Float($0)) }),
-                in: 0...1
-            )
-            .tint(.white)
-            Image(systemName: "speaker.wave.3.fill")
-                .foregroundStyle(.white.opacity(0.5))
-        }
-        .font(.caption)
-    }
-}
-
-// MARK: - UIImage dominant colour helper
+// MARK: - UIImage dominant colour helper (retained for potential use)
 extension UIImage {
-    /// Returns a rough dominant colour by downsampling and averaging pixels.
     func dominantColor() -> UIColor {
         let size = CGSize(width: 20, height: 20)
         let renderer = UIGraphicsImageRenderer(size: size)
@@ -297,136 +657,6 @@ extension UIImage {
             b += CGFloat(ptr[i + 2])
         }
         let pf = CGFloat(pixels)
-        // Darken for background use
         return UIColor(red: r / pf / 255 * 0.6, green: g / pf / 255 * 0.6, blue: b / pf / 255 * 0.6, alpha: 1)
     }
 }
-
-// MARK: - SpinningArtworkView
-/// Displays album art. When vinylAnimation is enabled in Settings, the artwork spins
-/// on a vinyl record platter while playing and pauses when stopped.
-/// Toggleable for battery-conscious users (Settings -> Now Playing).
-struct SpinningArtworkView: View {
-    let cacheKey: String?
-    let isPlaying: Bool
-
-    @AppStorage("vinylAnimation") private var vinylEnabled: Bool = true
-    @State private var rotation: Double = 0
-    @State private var timerTask: Task<Void, Never>?
-    @State private var artworkImage: UIImage?
-
-    var body: some View {
-        ZStack {
-            if vinylEnabled {
-                // Vinyl platter
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [.black, Color(white: 0.12), .black, Color(white: 0.08), .black],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 160
-                        )
-                    )
-                    .overlay {
-                        // Groove rings
-                        ForEach(0..<8) { i in
-                            Circle()
-                                .stroke(Color.white.opacity(0.04), lineWidth: 1)
-                                .padding(CGFloat(i) * 18 + 20)
-                        }
-                    }
-                    .overlay {
-                        // Center label — the album artwork
-                        artworkCircle
-                            .frame(width: 130, height: 130)
-                    }
-                    .rotationEffect(.degrees(rotation))
-                    .frame(width: 280, height: 280)
-                    .shadow(radius: 20)
-                    .padding(20)
-            } else {
-                // Plain square artwork
-                artworkSquare
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(radius: 20)
-                    .padding(32)
-            }
-        }
-        .onChange(of: isPlaying) { _, playing in
-            if playing { startSpinning() } else { stopSpinning() }
-        }
-        .onChange(of: cacheKey) { _, _ in loadArtwork() }
-        .onAppear { loadArtwork(); if isPlaying { startSpinning() } }
-        .onDisappear { stopSpinning() }
-        .onReceive(NotificationCenter.default.publisher(for: ArtworkCache.artworkDidUpdate)) { notification in
-            guard let updatedKey = notification.userInfo?["key"] as? String,
-                  updatedKey == cacheKey else { return }
-            loadArtwork()
-        }
-    }
-
-    private func loadArtwork() {
-        guard let key = cacheKey else { artworkImage = nil; return }
-        artworkImage = ArtworkCache.shared.fullImage(forKey: key)
-    }
-
-    private var artworkCircle: some View {
-        Group {
-            if let image = artworkImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Circle()
-                    .fill(Color(white: 0.2))
-                    .overlay {
-                        Image(systemName: "music.note")
-                            .foregroundStyle(.white.opacity(0.4))
-                            .font(.title2)
-                    }
-            }
-        }
-        .clipShape(Circle())
-        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 2))
-    }
-
-    private var artworkSquare: some View {
-        Group {
-            if let image = artworkImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.white.opacity(0.15))
-                    .overlay {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 60))
-                            .foregroundStyle(.white.opacity(0.4))
-                    }
-            }
-        }
-    }
-
-    // MARK: - Spin control
-    /// Continuously increments rotation at ~33.3 RPM (vinyl speed) = 0.555 degrees/frame at 60fps.
-    private func startSpinning() {
-        timerTask?.cancel()
-        timerTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(16))  // ~60fps
-                await MainActor.run {
-                    rotation = rotation.truncatingRemainder(dividingBy: 360) + 0.32
-                }
-            }
-        }
-    }
-
-    private func stopSpinning() {
-        timerTask?.cancel()
-        timerTask = nil
-        // Rotation stays at current angle — resumes from where it stopped.
-    }
-}
-

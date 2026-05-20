@@ -23,6 +23,7 @@ struct SearchView: View {
                 }
             }
             .navigationTitle("Search")
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $search.query, prompt: "Tracks, albums, artists...")
         }
     }
@@ -69,5 +70,6 @@ struct SearchView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
     }
 }

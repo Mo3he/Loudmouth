@@ -9,14 +9,46 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Published
     @Published var sortOrder: LibrarySortOrder = .album
     @Published var filterText = ""
+    @Published var selectedSourceID: MusicSourceID? = nil
     @Published var isScanningNow = false
     @Published var scanProgress: Double = 0
 
     // MARK: - Computed from LibraryStore
-    var tracks: [Track]   { applyFilter(Array(store.tracks.values).sorted(by: sortOrder)) }
-    var albums: [Album]   { Array(store.albums.values).sorted { $0.title < $1.title } }
-    var artists: [Artist] { Array(store.artists.values).sorted { $0.name < $1.name } }
+    var tracks: [Track] {
+        let base = Array(store.tracks.values)
+        let filtered = selectedSourceID.map { sid in base.filter { $0.source == sid } } ?? base
+        return applyFilter(filtered.sorted(by: sortOrder))
+    }
+
+    var albums: [Album] {
+        guard let sid = selectedSourceID else {
+            return Array(store.albums.values).sorted { $0.title < $1.title }
+        }
+        let sourceTrackIDs = Set(store.tracks.values.filter { $0.source == sid }.map { $0.id })
+        return store.albums.values
+            .filter { $0.trackIDs.contains { sourceTrackIDs.contains($0) } }
+            .sorted { $0.title < $1.title }
+    }
+
+    var artists: [Artist] {
+        guard let sid = selectedSourceID else {
+            return Array(store.artists.values).sorted { $0.name < $1.name }
+        }
+        let sourceTrackIDs = Set(store.tracks.values.filter { $0.source == sid }.map { $0.id })
+        let filteredAlbumIDs = Set(store.albums.values
+            .filter { $0.trackIDs.contains { sourceTrackIDs.contains($0) } }
+            .map { $0.id })
+        return store.artists.values
+            .filter { $0.albumIDs.contains { filteredAlbumIDs.contains($0) } }
+            .sorted { $0.name < $1.name }
+    }
+
     var playlists: [Playlist] { Array(store.playlists.values).sorted { $0.name < $1.name } }
+
+    /// Source IDs that have at least one track in the library.
+    var populatedSourceIDs: Set<MusicSourceID> {
+        Set(store.tracks.values.map { $0.source })
+    }
 
     // MARK: - Dependencies
     private let store: LibraryStore
@@ -27,6 +59,10 @@ final class LibraryViewModel: ObservableObject {
         let resolvedStore = libraryStore ?? LibraryStore.shared
         self.store = resolvedStore
         self.scanner = LibraryScanner(store: resolvedStore)
+        // Forward store mutations so views observing LibraryViewModel re-render immediately.
+        resolvedStore.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
 
     // MARK: - Accessors

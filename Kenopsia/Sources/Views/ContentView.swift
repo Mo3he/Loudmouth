@@ -8,6 +8,19 @@ struct ContentView: View {
     @EnvironmentObject var sources: SourceViewModel
     @StateObject var search = SearchViewModel()
 
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
+    @AppStorage("accentColorHex") private var accentColorHex = "00D9E6"
+
+    private var accentColor: Color { Color(hex: accentColorHex) ?? .kCyan }
+
+    private var preferredScheme: ColorScheme? {
+        switch appearanceMode {
+        case "light": return .light
+        case "dark":  return .dark
+        default:      return nil
+        }
+    }
+
     var body: some View {
         Group {
             #if os(iOS)
@@ -20,9 +33,13 @@ struct ContentView: View {
             macLayout
             #endif
         }
+        .environment(\..kAccent, accentColor)
+        .preferredColorScheme(preferredScheme)
         .sheet(isPresented: $player.showingNowPlaying) {
             NowPlayingView()
                 .environmentObject(player)
+                .environment(\.colorScheme, .dark)
+                .environment(\.kAccent, accentColor)
         }
         .onAppear {
             // Wire SourceViewModel → LibraryViewModel for post-upload scans
@@ -46,11 +63,18 @@ struct ContentView: View {
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if player.state.status != .stopped {
+                Color.clear.frame(height: 66)
+            }
+        }
         .overlay(alignment: .bottom) {
             MiniPlayerView()
                 .environmentObject(player)
-                .padding(.bottom, 49)   // above tab bar
+                .environment(\.colorScheme, .dark)
+                .padding(.bottom, 57)   // above tab bar with 8pt gap
         }
+        .tint(accentColor)
     }
 
     // MARK: - iPad split

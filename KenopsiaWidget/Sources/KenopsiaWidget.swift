@@ -51,14 +51,20 @@ struct NowPlayingProvider: TimelineProvider {
               state.status == "playing" || state.status == "paused"
         else { return .empty }
 
-        // Read artwork from shared cache folder
+        // Read artwork from shared App Group cache folder.
+        // Must mirror ArtworkCache.safeName() to match the filename written by the app.
         let artworkData: Data? = {
             guard let key = state.nowPlayingArtworkCacheKey else { return nil }
+            let safeKey = (key + "_grid")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: ":", with: "_")
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "=", with: "")
             let base = FileManager.default
                 .containerURL(forSecurityApplicationGroupIdentifier: "group.net.mohome.kenopsia")
             let url = base?
                 .appendingPathComponent("ArtworkCache")
-                .appendingPathComponent(key + "_grid")
+                .appendingPathComponent(safeKey)
                 .appendingPathExtension("jpg")
             return url.flatMap { try? Data(contentsOf: $0) }
         }()

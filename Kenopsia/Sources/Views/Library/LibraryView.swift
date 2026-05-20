@@ -1,163 +1,320 @@
 import SwiftUI
+import PhotosUI
 
 // MARK: - LibraryView
-/// Main library tab. Albums, Artists, Tracks, Playlists segmented across a picker.
 struct LibraryView: View {
     @EnvironmentObject var library: LibraryViewModel
     @EnvironmentObject var player: PlayerViewModel
-    @State private var section: LibrarySection = .albums
+    @EnvironmentObject var sources: SourceViewModel
+    @Environment(\..kAccent) var accent
+    @State private var section: LibrarySection = .artists
+
+    private var totalHours: Double {
+        library.tracks.reduce(0) { $0 + $1.durationSeconds } / 3600
+    }
+
+    private var populatedSources: [MusicSource] {
+        sources.sources.filter { library.populatedSourceIDs.contains($0.id) }
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("Section", selection: $section) {
-                    ForEach(LibrarySection.allCases, id: \.self) { s in
-                        Text(s.label).tag(s)
+            ZStack {
+                Color.kBackground.ignoresSafeArea()
+                VStack(spacing: 0) {
+                    breadcrumbHeader
+                    statsBar
+                    if populatedSources.count > 1 {
+                        sourceFilterRow
                     }
-                }
-                .pickerStyle(.segmented)
-                .padding([.horizontal, .bottom])
-
-                switch section {
-                case .albums:   AlbumGridView()
-                case .artists:  ArtistListView()
-                case .tracks:   TrackListView(tracks: library.tracks)
-                case .playlists: PlaylistListView()
+                    filterTabs
+                    Divider().overlay(Color.kBorder)
+                    contentArea
                 }
             }
-            .navigationTitle("Library")
-            .searchable(text: $library.filterText, prompt: "Filter")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        ForEach(LibrarySortOrder.allCases, id: \.self) { order in
-                            Button(order.displayName) { library.sortOrder = order }
-                        }
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .tint(accent)
+    }
+
+    private var breadcrumbHeader: some View {
+        HStack(spacing: 6) {
+            Text("LIBRARY")
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+        .font(.system(size: 12, weight: .bold))
+        .tracking(1.5)
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+    }
+
+    private var statsBar: some View {
+        HStack(spacing: 6) {
+            Text("\(library.albums.count) ALBUMS")
+            Text("·").foregroundStyle(.primary.opacity(0.2))
+            Text("\(library.tracks.count) TRACKS")
+            Text("·").foregroundStyle(.primary.opacity(0.2))
+            Text(String(format: "%.1f HRS", totalHours))
+        }
+        .font(.system(size: 9, weight: .semibold))
+        .tracking(1.0)
+        .foregroundStyle(.primary.opacity(0.4))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 10)
+    }
+
+    private var sourceFilterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                sourceChip(label: "ALL", id: nil)
+                ForEach(populatedSources) { source in
+                    sourceChip(label: source.displayName.uppercased(), id: source.id)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 10)
+        }
+    }
+
+    private func sourceChip(label: String, id: MusicSourceID?) -> some View {
+        let isSelected = library.selectedSourceID == id
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) { library.selectedSourceID = id }
+        } label: {
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .tracking(1.5)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(isSelected ? accent : Color.primary.opacity(0.07))
+                .foregroundStyle(isSelected ? Color.black : Color.primary.opacity(0.55))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var filterTabs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(LibrarySection.allCases, id: \.self) { s in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) { section = s }
                     } label: {
-                        Image(systemName: "arrow.up.arrow.down")
-                    }
-                }
-            }
-        }
-    }
-}
-
-enum LibrarySection: CaseIterable {
-    case albums, artists, tracks, playlists
-    var label: String {
-        switch self {
-        case .albums: "Albums"; case .artists: "Artists"
-        case .tracks: "Tracks"; case .playlists: "Playlists"
-        }
-    }
-}
-
-// MARK: - AlbumGridView
-struct AlbumGridView: View {
-    @EnvironmentObject var library: LibraryViewModel
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
-
-    var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(library.albums) { album in
-                    NavigationLink(destination: AlbumDetailView(album: album)) {
-                        AlbumTileView(album: album)
+                        Text(s.label)
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(1.5)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(section == s ? accent : Color.primary.opacity(0.07))
+                            .foregroundStyle(section == s ? Color.black : Color.primary.opacity(0.55))
+                            .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+        }
+    }
+
+    @ViewBuilder
+    private var contentArea: some View {
+        switch section {
+        case .albums:    AlbumListView()
+        case .artists:   ArtistListView()
+        case .tracks:    TrackListView(tracks: library.tracks)
+        case .playlists: PlaylistListView()
+        case .folders:   FolderBrowserView()
         }
     }
 }
 
-struct AlbumTileView: View {
+// MARK: - LibrarySection
+enum LibrarySection: CaseIterable {
+    case artists, albums, tracks, playlists, folders
+    var label: String {
+        switch self {
+        case .artists:   "ARTISTS"
+        case .albums:    "ALBUMS"
+        case .tracks:    "TRACKS"
+        case .playlists: "PLAYLISTS"
+        case .folders:   "FOLDERS"
+        }
+    }
+}
+
+// MARK: - AlbumListView
+struct AlbumListView: View {
+    @EnvironmentObject var library: LibraryViewModel
+    @EnvironmentObject var player: PlayerViewModel
+
+    var body: some View {
+        List {
+            ForEach(library.albums) { album in
+                NavigationLink(destination: AlbumDetailView(album: album)) {
+                    AlbumRowView(album: album)
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+                .listRowSeparator(.hidden)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
+    }
+}
+
+// MARK: - AlbumRowView
+struct AlbumRowView: View {
     let album: Album
     @State private var artworkImage: UIImage?
     @State private var resolvedKey: String?
 
+    private var albumHue: Double {
+        Double(abs(album.id.hashValue) % 100) / 100
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 14) {
             Group {
                 if let img = artworkImage {
                     Image(uiImage: img)
                         .resizable()
                         .scaledToFill()
                 } else {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(hue: albumHue, saturation: 0.4, brightness: 0.6))
+                    Color(hue: albumHue, saturation: 0.35, brightness: 0.28)
                         .overlay {
                             Text(album.title.prefix(1))
-                                .font(.largeTitle.bold())
-                                .foregroundStyle(.white)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.5))
                         }
                 }
             }
-            .frame(height: 150)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .frame(width: 52, height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
 
-            Text(album.title)
-                .font(.caption.bold())
-                .lineLimit(1)
-            Text(album.artist)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(album.title)
+                    .font(.system(.subheadline, design: .default).bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(album.artist.uppercased())
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(0.8)
+                    .foregroundStyle(.primary.opacity(0.4))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let year = album.year {
+                Text(String(year))
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(.primary.opacity(0.45))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(Color.primary.opacity(0.2), lineWidth: 0.75)
+                    )
+            }
+        }
+        .padding(.vertical, 9)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 0.5)
         }
         .onAppear { loadArtwork() }
         .onReceive(NotificationCenter.default.publisher(for: ArtworkCache.artworkDidUpdate)) { notification in
-            guard let updatedKey = notification.userInfo?["key"] as? String,
-                  updatedKey == resolvedKey else { return }
+            guard let key = notification.userInfo?["key"] as? String,
+                  key == resolvedKey else { return }
             loadArtwork()
         }
     }
 
     private func loadArtwork() {
-        // Use the track's embedded key if present; otherwise generate from artist+album
         let key = album.artworkCacheKey
             ?? ArtworkFetchService.generateCacheKey(artist: album.artist, album: album.title)
         resolvedKey = key
-        if let img = ArtworkCache.shared.gridImage(forKey: key) {
-            artworkImage = img
-            return
-        }
-        // Kick off a network fetch in the background; notification will refresh the view
-        Task {
-            await ArtworkFetchService.shared.fetch(artist: album.artist, album: album.title, cacheKey: key)
-        }
-    }
-
-    private var albumHue: Double {
-        Double(abs(album.id.hashValue) % 100) / 100
+        artworkImage = ArtworkCache.shared.gridImage(forKey: key)
     }
 }
 
 // MARK: - ArtistListView
 struct ArtistListView: View {
     @EnvironmentObject var library: LibraryViewModel
+    @EnvironmentObject var player: PlayerViewModel
+
     var body: some View {
         List(library.artists) { artist in
             NavigationLink(destination: ArtistDetailView(artist: artist)) {
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(Color(hue: Double(abs(artist.id.hashValue) % 100) / 100,
-                                    saturation: 0.4, brightness: 0.6))
-                        .frame(width: 44, height: 44)
-                        .overlay {
-                            Text(artist.name.prefix(1))
-                                .font(.headline.bold())
-                                .foregroundStyle(.white)
-                        }
-                    VStack(alignment: .leading) {
-                        Text(artist.name).font(.subheadline.bold())
-                        Text("\(artist.albumIDs.count) album\(artist.albumIDs.count == 1 ? "" : "s")")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+                ArtistRowView(artist: artist)
             }
+            .listRowBackground(Color.clear)
+            .listRowSeparatorTint(Color.primary.opacity(0.06))
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
+    }
+}
+
+// MARK: - ArtistRowView
+struct ArtistRowView: View {
+    let artist: Artist
+    @State private var artworkImage: UIImage?
+    @State private var resolvedKey: String?
+
+    private var placeholderHue: Double {
+        Double(abs(artist.id.hashValue) % 100) / 100
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Group {
+                if let img = artworkImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color(hue: placeholderHue, saturation: 0.35, brightness: 0.28)
+                        .overlay {
+                            Text(artist.name.prefix(1))
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.55))
+                        }
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(artist.name)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                Text("\(artist.albumIDs.count) ALBUM\(artist.albumIDs.count == 1 ? "" : "S")")
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(0.8)
+                    .foregroundStyle(.primary.opacity(0.4))
+            }
+        }
+        .padding(.vertical, 5)
+        .onAppear { loadArtwork() }
+        .onReceive(NotificationCenter.default.publisher(for: ArtworkCache.artworkDidUpdate)) { notification in
+            guard let key = notification.userInfo?["key"] as? String,
+                  key == resolvedKey else { return }
+            loadArtwork()
+        }
+    }
+
+    private func loadArtwork() {
+        guard let key = artist.artworkCacheKey else { return }
+        resolvedKey = key
+        artworkImage = ArtworkCache.shared.gridImage(forKey: key)
     }
 }
 
@@ -165,6 +322,8 @@ struct ArtistListView: View {
 struct TrackListView: View {
     let tracks: [Track]
     @EnvironmentObject var player: PlayerViewModel
+    @EnvironmentObject var library: LibraryViewModel
+    @State private var editingTrack: Track?
 
     var body: some View {
         List(tracks) { track in
@@ -172,13 +331,28 @@ struct TrackListView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { player.play(tracks: tracks, startAt: tracks.firstIndex(of: track) ?? 0) }
                 .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) { library.delete(trackID: track.id) } label: {
+                        Label("Remove", systemImage: "trash")
+                    }
+                    Button { editingTrack = track } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    .tint(.indigo)
                     Button { player.enqueueNext(track) } label: {
                         Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
                     }
-                    .tint(.accentColor)
+                    .tint(.kCyan)
                 }
+                .listRowBackground(Color.clear)
+                .listRowSeparatorTint(Color.primary.opacity(0.06))
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
+        .sheet(item: $editingTrack) { track in
+            TagEditorView(track: track)
+                .environmentObject(library)
+        }
     }
 }
 
@@ -189,22 +363,35 @@ struct TrackRowView: View {
             MiniArtworkView(cacheKey: track.artworkCacheKey
                 ?? ArtworkFetchService.generateCacheKey(artist: track.artist, album: track.album))
             VStack(alignment: .leading, spacing: 2) {
-                Text(track.title).font(.subheadline.bold()).lineLimit(1)
-                Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(track.title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(track.artist.uppercased())
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(0.8)
+                    .foregroundStyle(.primary.opacity(0.4))
+                    .lineLimit(1)
             }
             Spacer()
-            if track.isLossless {
+            HStack(spacing: 6) {
                 Text(track.format.displayName)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.7))
-                    .clipShape(Capsule())
+                    .font(.system(size: 8, weight: .bold))
+                    .tracking(0.5)
+                    .foregroundStyle(track.isLossless ? Color.kCyan : Color.primary.opacity(0.35))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 3)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(
+                                track.isLossless ? Color.kCyan.opacity(0.5) : Color.primary.opacity(0.18),
+                                lineWidth: 0.75
+                            )
+                    )
+                Text(formatDuration(track.durationSeconds))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.primary.opacity(0.3))
             }
-            Text(formatDuration(track.durationSeconds))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
     }
@@ -225,18 +412,42 @@ struct PlaylistListView: View {
         List {
             ForEach(library.playlists) { playlist in
                 NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
-                    Label(playlist.name,
-                          systemImage: playlist.kind == .smart ? "sparkles" : "music.note.list")
+                    HStack(spacing: 14) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.primary.opacity(0.07))
+                            .frame(width: 44, height: 44)
+                            .overlay {
+                                Image(systemName: playlist.kind == .smart ? "sparkles" : "music.note.list")
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(Color.kCyan)
+                            }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(playlist.name)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+                            Text("\(playlist.trackIDs.count) TRACKS")
+                                .font(.system(size: 9, weight: .medium))
+                                .tracking(0.8)
+                                .foregroundStyle(.primary.opacity(0.4))
+                        }
+                    }
+                    .padding(.vertical, 5)
                 }
+                .listRowBackground(Color.clear)
+                .listRowSeparatorTint(Color.primary.opacity(0.06))
             }
             .onDelete { offsets in
                 offsets.forEach { library.delete(playlistID: library.playlists[$0].id) }
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { isCreating = true } label: { Image(systemName: "plus") }
+                Button { isCreating = true } label: {
+                    Image(systemName: "plus").foregroundStyle(.primary)
+                }
             }
         }
         .alert("New Playlist", isPresented: $isCreating) {
@@ -250,11 +461,15 @@ struct PlaylistListView: View {
     }
 }
 
-// MARK: - Detail stubs (full implementations are in separate files)
+// MARK: - AlbumDetailView
 struct AlbumDetailView: View {
     let album: Album
     @EnvironmentObject var library: LibraryViewModel
     @EnvironmentObject var player: PlayerViewModel
+    @Environment(\.kAccent) var accent
+    @State private var artworkImage: UIImage?
+    @State private var editingTrack: Track?
+    @State private var showingAlbumEditor = false
 
     var tracks: [Track] {
         album.trackIDs.compactMap { library.track(for: $0) }
@@ -262,19 +477,198 @@ struct AlbumDetailView: View {
     }
 
     var body: some View {
-        TrackListView(tracks: tracks)
-            .navigationTitle(album.title)
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { player.play(tracks: tracks) } label: {
-                        Label("Play All", systemImage: "play.fill")
+        ScrollView {
+            VStack(spacing: 0) {
+                albumHeader
+                Rectangle()
+                    .fill(Color.primary.opacity(0.07))
+                    .frame(height: 1)
+                    .padding(.bottom, 4)
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(tracks.enumerated()), id: \.element.id) { idx, track in
+                        DetailTrackRow(track: track, index: idx + 1)
+                            .contentShape(Rectangle())
+                            .onTapGesture { player.play(tracks: tracks, startAt: idx) }
+                            .contextMenu {
+                                Button { editingTrack = track } label: {
+                                    Label("Edit Tags", systemImage: "pencil")
+                                }
+                                Button { player.enqueueNext(track) } label: {
+                                    Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                                }
+                                Divider()
+                                Button(role: .destructive) { library.delete(trackID: track.id) } label: {
+                                    Label("Remove from Library", systemImage: "trash")
+                                }
+                            }
                     }
                 }
+                .padding(.horizontal, 20)
             }
+        }
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
+        .background(Color.kBackground.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(album.title.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundStyle(.primary)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingAlbumEditor = true } label: {
+                    Image(systemName: "pencil")
+                        .foregroundStyle(.primary)
+                }
+            }
+        }
+        .toolbarBackground(Color.kBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .sheet(isPresented: $showingAlbumEditor) {
+            AlbumEditorView(album: album)
+                .environmentObject(library)
+        }
+        .sheet(item: $editingTrack) { track in
+            TagEditorView(track: track)
+                .environmentObject(library)
+        }
+        .onAppear { loadArtwork() }
+        .onReceive(NotificationCenter.default.publisher(for: ArtworkCache.artworkDidUpdate)) { _ in
+            loadArtwork()
+        }
+    }
+
+    private var albumHeader: some View {
+        VStack(spacing: 16) {
+            Group {
+                if let img = artworkImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    Color(hue: Double(abs(album.id.hashValue) % 100) / 100,
+                          saturation: 0.35, brightness: 0.28)
+                        .overlay {
+                            Text(album.title.prefix(1))
+                                .font(.system(size: 64, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                        .aspectRatio(1, contentMode: .fit)
+                }
+            }
+            .frame(maxWidth: 220)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            VStack(spacing: 10) {
+                Text(album.title)
+                    .font(.system(.title3, design: .default).bold())
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                Text(album.artist.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(.primary.opacity(0.4))
+
+                HStack(spacing: 6) {
+                    if let year = album.year {
+                        MetaChip(text: String(year))
+                    }
+                    MetaChip(text: "\(tracks.count) TRACKS")
+                    MetaChip(text: totalDuration)
+                }
+
+                Button { player.play(tracks: tracks) } label: {
+                    Text("PLAY")
+                        .font(.system(size: 11, weight: .bold))
+                        .tracking(2.5)
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.top, 20)
+        .padding(.bottom, 20)
+    }
+
+    private var totalDuration: String {
+        let s = tracks.reduce(0) { $0 + $1.durationSeconds }
+        let m = Int(s) / 60
+        return m < 60 ? "\(m)m" : String(format: "%dh %dm", m / 60, m % 60)
+    }
+
+    private func loadArtwork() {
+        let key = album.artworkCacheKey
+            ?? ArtworkFetchService.generateCacheKey(artist: album.artist, album: album.title)
+        artworkImage = ArtworkCache.shared.fullImage(forKey: key)
     }
 }
 
+// MARK: - MetaChip
+struct MetaChip: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .tracking(0.5)
+            .foregroundStyle(.primary.opacity(0.45))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(Color.primary.opacity(0.2), lineWidth: 0.75)
+            )
+    }
+}
+
+// MARK: - DetailTrackRow
+struct DetailTrackRow: View {
+    let track: Track
+    let index: Int
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(String(format: "%02d", index))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.primary.opacity(0.2))
+                .frame(width: 24, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if !track.artist.isEmpty && track.artist != track.albumArtist {
+                    Text(track.artist.uppercased())
+                        .font(.system(size: 9, weight: .medium))
+                        .tracking(0.8)
+                        .foregroundStyle(.primary.opacity(0.4))
+                }
+            }
+            Spacer()
+            Text(formatDuration(track.durationSeconds))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.primary.opacity(0.3))
+        }
+        .padding(.vertical, 11)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 0.5)
+        }
+    }
+
+    private func formatDuration(_ s: Double) -> String {
+        String(format: "%d:%02d", Int(s) / 60, Int(s) % 60)
+    }
+}
+
+// MARK: - ArtistDetailView
 struct ArtistDetailView: View {
     let artist: Artist
     @EnvironmentObject var library: LibraryViewModel
@@ -286,25 +680,36 @@ struct ArtistDetailView: View {
             .sorted { ($0.year ?? 0) > ($1.year ?? 0) }
     }
 
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
-
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(albums) { album in
-                    NavigationLink(destination: AlbumDetailView(album: album)) {
-                        AlbumTileView(album: album)
-                    }
-                    .buttonStyle(.plain)
+        List {
+            ForEach(albums) { album in
+                NavigationLink(destination: AlbumDetailView(album: album)) {
+                    AlbumRowView(album: album)
                 }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+                .listRowSeparator(.hidden)
             }
-            .padding()
         }
-        .navigationTitle(artist.name)
-        .navigationBarTitleDisplayMode(.large)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
+        .background(Color.kBackground.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(artist.name.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .toolbarBackground(Color.kBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 }
 
+// MARK: - PlaylistDetailView
 struct PlaylistDetailView: View {
     let playlist: Playlist
     @EnvironmentObject var library: LibraryViewModel
@@ -319,7 +724,140 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         TrackListView(tracks: tracks)
-            .navigationTitle(playlist.name)
+            .background(Color.kBackground.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(playlist.name.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(1.5)
+                        .foregroundStyle(.primary)
+                }
+            }
+            .toolbarBackground(Color.kBackground, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
     }
 }
 
+// MARK: - FolderBrowserView
+struct FolderBrowserView: View {
+    @EnvironmentObject var library: LibraryViewModel
+    @EnvironmentObject var player: PlayerViewModel
+
+    private struct FolderEntry: Identifiable {
+        let id: String        // full directory path
+        let name: String      // last path component
+        let tracks: [Track]
+    }
+
+    private var folders: [FolderEntry] {
+        var dict: [String: [Track]] = [:]
+        for track in library.tracks {
+            guard case .localFile(let path) = track.uri else { continue }
+            let dir = URL(fileURLWithPath: path).deletingLastPathComponent().path
+            dict[dir, default: []].append(track)
+        }
+        return dict
+            .map { FolderEntry(id: $0.key,
+                               name: URL(fileURLWithPath: $0.key).lastPathComponent,
+                               tracks: $0.value) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        if folders.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "folder")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.primary.opacity(0.15))
+                Text("No local folders")
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1)
+                    .foregroundStyle(.primary.opacity(0.3))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List {
+                ForEach(folders) { folder in
+                    NavigationLink(destination: FolderDetailView(name: folder.name, tracks: folder.tracks)) {
+                        HStack(spacing: 14) {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Color.kCyan.opacity(0.8))
+                                .frame(width: 32)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(folder.name)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text("\(folder.tracks.count) TRACK\(folder.tracks.count == 1 ? "" : "S")")
+                                    .font(.system(size: 9, weight: .medium))
+                                    .tracking(0.5)
+                                    .foregroundStyle(.primary.opacity(0.4))
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+                    .listRowSeparator(.hidden)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
+        }
+    }
+}
+
+// MARK: - FolderDetailView
+struct FolderDetailView: View {
+    let name: String
+    let tracks: [Track]
+    @EnvironmentObject var player: PlayerViewModel
+    @Environment(\.kAccent) var accent
+
+    private var sortedTracks: [Track] {
+        tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                Button { player.play(tracks: sortedTracks) } label: {
+                    Text("PLAY ALL")
+                        .font(.system(size: 11, weight: .bold))
+                        .tracking(2.5)
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+
+                ForEach(Array(sortedTracks.enumerated()), id: \.element.id) { idx, track in
+                    DetailTrackRow(track: track, index: idx + 1)
+                        .contentShape(Rectangle())
+                        .onTapGesture { player.play(tracks: sortedTracks, startAt: idx) }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
+        .background(Color.kBackground.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(name.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .toolbarBackground(Color.kBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+    }
+}

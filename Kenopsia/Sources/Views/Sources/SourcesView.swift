@@ -4,6 +4,7 @@ import CryptoKit
 // MARK: - SourcesView
 struct SourcesView: View {
     @EnvironmentObject var sources: SourceViewModel
+    @EnvironmentObject var player: PlayerViewModel
     @State private var isAddingSource = false
 
     var body: some View {
@@ -22,7 +23,9 @@ struct SourcesView: View {
                     WiFiTransferRow()
                 }
             }
+            .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
             .navigationTitle("Sources")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { isAddingSource = true } label: { Image(systemName: "plus") }
@@ -48,7 +51,17 @@ struct SourceRowView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(source.displayName).font(.subheadline).fontWeight(.semibold)
-                Text(source.kind.displayName).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(source.kind.displayName).font(.caption).foregroundStyle(.secondary)
+                    if source.trackCount > 0 {
+                        Text("\u{00B7}").font(.caption).foregroundStyle(.tertiary)
+                        Text("\(source.trackCount) tracks").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let date = source.lastScanDate {
+                        Text("\u{00B7}").font(.caption).foregroundStyle(.tertiary)
+                        Text(date, style: .relative).font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
             }
             Spacer()
             if !source.isEnabled {
@@ -93,10 +106,48 @@ struct WiFiTransferRow: View {
     }
 }
 
+// MARK: - WiFiTransferPasswordRow
+struct WiFiTransferPasswordRow: View {
+    @EnvironmentObject var sources: SourceViewModel
+
+    private var wifiConfig: WiFiTransferConfig? {
+        sources.sources.first(where: { $0.kind == .wifiTransfer }).flatMap {
+            if case .wifiTransfer(let c) = $0.config { return c } else { return nil }
+        }
+    }
+
+    @State private var requiresPassword: Bool = false
+    @State private var password: String = ""
+
+    var body: some View {
+        Group {
+            Toggle("Require Upload Password", isOn: $requiresPassword)
+                .onChange(of: requiresPassword) { _, newVal in
+                    sources.updateWiFiTransferConfig(requiresPassword: newVal, password: password)
+                }
+            if requiresPassword {
+                SecureField("Upload Password", text: $password)
+                    .onSubmit {
+                        sources.updateWiFiTransferConfig(requiresPassword: requiresPassword, password: password)
+                    }
+            }
+        }
+        .onAppear {
+            if let cfg = wifiConfig {
+                requiresPassword = cfg.requiresPassword
+                password = cfg.requiresPassword
+                    ? ((try? KeychainHelper.shared.read(key: cfg.keychainKey)) ?? "")
+                    : ""
+            }
+        }
+    }
+}
+
 // MARK: - SourceDetailView  (edit existing source)
 struct SourceDetailView: View {
     @State var source: MusicSource
     @EnvironmentObject var sources: SourceViewModel
+    @EnvironmentObject var player: PlayerViewModel
     @State private var isScanningNow = false
     @State private var scanResult: String?
     @State private var showingFilePicker = false
@@ -124,12 +175,21 @@ struct SourceDetailView: View {
                         }
                     }
                     .disabled(isScanningNow)
+                    if isScanningNow {
+                        Button("Cancel Scan", role: .destructive) {
+                            sources.cancelScan(for: source.id)
+                            isScanningNow = false
+                            scanResult = "Scan cancelled"
+                        }
+                        .font(.subheadline)
+                    }
                     if let result = scanResult {
                         Text(result).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
         }
+        .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
         .navigationTitle(source.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: source) { _, newSource in sources.update(source: newSource) }
@@ -170,17 +230,14 @@ struct SourceDetailView: View {
             }
         case .nas:
             Section("Connection") {
-                TextField("192.168.1.100 or hostname", text: nasHostBinding)
+                TextField("192.168.1.100 or hostname (leave blank to auto-discover)", text: nasHostBinding)
                     .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
                 HStack {
                     Text("Port"); Spacer()
                     TextField("8200", value: nasPortBinding, format: .number)
                         .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                 }
-                Picker("Protocol", selection: nasProtocolBinding) {
-                    Text("DLNA / UPnP").tag(NASSourceConfig.NASProtocol.dlna)
-                    Text("SMB / Samba").tag(NASSourceConfig.NASProtocol.smb)
-                }
+                Text("Protocol: DLNA / UPnP").foregroundStyle(.secondary)
             }
         case .webRadio(let cfg):
             Section("Stations (\(cfg.stations.count))") {
@@ -226,8 +283,9 @@ struct SourceDetailView: View {
                 }
             }
         case .wifiTransfer:
-            EmptyView()
-
+            Section("Security") {
+                WiFiTransferPasswordRow()
+            }
         case .appleMusic:
             AppleMusicDetailSection(source: source)
         }
@@ -266,12 +324,6 @@ struct SourceDetailView: View {
         Binding(
             get: { guard case .nas(let c) = source.config else { return 8200 }; return c.port },
             set: { v in guard case .nas(var c) = source.config else { return }; c.port = v; source.config = .nas(c) }
-        )
-    }
-    private var nasProtocolBinding: Binding<NASSourceConfig.NASProtocol> {
-        Binding(
-            get: { guard case .nas(let c) = source.config else { return .dlna }; return c.protocol_ },
-            set: { v in guard case .nas(var c) = source.config else { return }; c.protocol_ = v; source.config = .nas(c) }
         )
     }
 }
@@ -398,6 +450,8 @@ struct AddSourceConfigView: View {
     @State private var nasHost = ""
     @State private var nasPort = 8200
     @State private var nasProtocol: NASSourceConfig.NASProtocol = .dlna
+    @State private var nasDiscoveredServers: [URL] = []
+    @State private var isDiscovering = false
 
     // Cloud
     @State private var cloudProvider: CloudProvider = .iCloud
@@ -474,7 +528,7 @@ struct AddSourceConfigView: View {
 
         case .nas:
             Section("Connection") {
-                TextField("192.168.1.100 or hostname", text: $nasHost)
+                TextField("192.168.1.100 or hostname (optional)", text: $nasHost)
                     .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
                     .onChange(of: nasHost) { _, _ in connectionStatus = .idle }
                 HStack {
@@ -482,10 +536,43 @@ struct AddSourceConfigView: View {
                     TextField("8200", value: $nasPort, format: .number)
                         .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                 }
-                Picker("Protocol", selection: $nasProtocol) {
-                    Text("DLNA / UPnP").tag(NASSourceConfig.NASProtocol.dlna)
-                    Text("SMB / Samba").tag(NASSourceConfig.NASProtocol.smb)
+                Text("Protocol: DLNA / UPnP").foregroundStyle(.secondary)
+            }
+            Section {
+                Button {
+                    isDiscovering = true
+                    nasDiscoveredServers = []
+                    Task {
+                        let browser = DLNABrowser()
+                        nasDiscoveredServers = await browser.discoverServers(timeout: 5)
+                        isDiscovering = false
+                    }
+                } label: {
+                    if isDiscovering {
+                        HStack { ProgressView(); Text("Scanning network\u{2026}").foregroundStyle(.secondary) }
+                    } else {
+                        Label("Scan Network", systemImage: "network")
+                    }
                 }
+                .disabled(isDiscovering)
+                ForEach(nasDiscoveredServers, id: \.absoluteString) { url in
+                    Button {
+                        nasHost = url.host ?? ""
+                        nasPort = url.port ?? 8200
+                        connectionStatus = .idle
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(url.host ?? url.absoluteString).font(.subheadline)
+                            Text(url.absoluteString).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
+            } header: {
+                Text("Auto-Discover")
+            } footer: {
+                Text("Tap a discovered server to fill in its address, or type it manually above.")
+                    .font(.caption)
             }
 
         case .webRadio:
@@ -569,7 +656,7 @@ struct AddSourceConfigView: View {
         switch kind {
         case .local:        return localBookmark != nil
         case .subsonic:     return !subURL.isEmpty && !subUsername.isEmpty && !subPassword.isEmpty
-        case .nas:          return !nasHost.isEmpty
+        case .nas:          return true   // host is optional — SSDP discovers if left empty
         case .webRadio, .wifiTransfer, .appleMusic: return true
         case .cloud:
             switch cloudProvider {
@@ -631,7 +718,9 @@ struct AddSourceConfigView: View {
         guard var comps = URLComponents(string: subURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             connectionStatus = .failure("Invalid URL"); return
         }
-        comps.path = "/rest/ping.view"
+        // Preserve any existing base path for reverse-proxy servers (e.g. example.com/music).
+        let base = comps.path.hasSuffix("/") ? String(comps.path.dropLast()) : comps.path
+        comps.path = (base == "/" ? "" : base) + "/rest/ping.view"
         let salt = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let token = Insecure.MD5.hash(data: Data((subPassword + salt).utf8))
             .map { String(format: "%02x", $0) }.joined()
@@ -666,19 +755,36 @@ struct AddSourceConfigView: View {
 
     private func testNASConnection() async {
         connectionStatus = .testing
-        guard let url = URL(string: "http://\(nasHost):\(nasPort)/description.xml") else {
-            connectionStatus = .failure("Invalid host or port"); return
+        // First attempt SSDP — it returns the canonical LOCATION URL (correct path).
+        let browser = DLNABrowser()
+        let discovered = await browser.discoverServers(timeout: 3)
+        let hostMatch = nasHost.isEmpty ? discovered.first : discovered.first(where: { $0.host == nasHost })
+        if let match = hostMatch {
+            do {
+                let (_, response) = try await URLSession.shared.data(from: match)
+                if let http = response as? HTTPURLResponse, http.statusCode < 400 {
+                    connectionStatus = .success("Server reachable (\(match.lastPathComponent))")
+                    return
+                }
+            } catch { }
         }
-        do {
-            let (_, response) = try await URLSession.shared.data(from: url)
-            if let http = response as? HTTPURLResponse, http.statusCode < 400 {
-                connectionStatus = .success("Server is reachable at \(nasHost):\(nasPort)")
-            } else {
-                connectionStatus = .failure("Server returned an error")
-            }
-        } catch {
-            connectionStatus = .failure("Cannot reach \(nasHost):\(nasPort)")
+        // SSDP not available or no match — try well-known description paths.
+        guard !nasHost.isEmpty else {
+            connectionStatus = .failure("No servers found via SSDP. Type a host address manually.")
+            return
         }
+        let paths = ["/rootDesc.xml", "/description.xml", "/DeviceDescription.xml"]
+        for path in paths {
+            guard let url = URL(string: "http://\(nasHost):\(nasPort)\(path)") else { continue }
+            do {
+                let (_, response) = try await URLSession.shared.data(from: url)
+                if let http = response as? HTTPURLResponse, http.statusCode < 400 {
+                    connectionStatus = .success("Server reachable at \(path)")
+                    return
+                }
+            } catch { }
+        }
+        connectionStatus = .failure("Cannot reach \(nasHost):\(nasPort) \u{2014} check host and port")
     }
 }
 

@@ -44,6 +44,12 @@ targets:
         com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)net.mohome.kenopsia
         com.apple.security.application-groups:
           - group.net.mohome.kenopsia
+        com.apple.developer.music-kit: true
+        com.apple.developer.carplay-audio: true
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.net.mohome.kenopsia
+        com.apple.developer.icloud-services:
+          - CloudDocuments
     dependencies:
       - target: KenopsiaWidget
         embed: true

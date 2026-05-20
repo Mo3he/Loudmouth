@@ -83,15 +83,20 @@ actor TagWriter {
     /// then writes updated frames back with the same or larger header size.
     private func writeID3Tags(tags: TrackTags, to url: URL) throws {
         var fileData = try Data(contentsOf: url)
-        let newHeader = buildID3Header(tags: tags)
+        let newFrames = buildID3Frames(tags: tags)
+        // Total content = frames. In the padded in-place case we add extra zero bytes,
+        // but the size field always reflects the full content region (frames + padding).
+        let newHeader = buildID3v24Header(frames: newFrames)
 
         if let existingSize = existingID3Size(in: fileData), existingSize >= newHeader.count {
-            // Overwrite existing header in-place (with padding if smaller)
-            var padded = newHeader
-            padded.append(contentsOf: [UInt8](repeating: 0, count: existingSize - newHeader.count))
+            // Overwrite in-place. The padded size = existingSize - 10 (header bytes).
+            let paddedContentSize = existingSize - 10
+            // Rebuild header with the correct (padded) content size so the syncsafe
+            // size field reflects frames + padding, not just frames.
+            var padded = buildID3v24Header(frames: newFrames, totalContentSize: paddedContentSize)
+            padded.append(contentsOf: [UInt8](repeating: 0, count: paddedContentSize - newFrames.count))
             fileData.replaceSubrange(0..<existingSize, with: padded)
         } else {
-            // Prepend new header, removing old one if present
             let audioStart = existingID3Size(in: fileData) ?? 0
             let audioData = fileData[audioStart...]
             fileData = newHeader + audioData
@@ -107,22 +112,38 @@ actor TagWriter {
         return 10 + size
     }
 
-    private func buildID3Header(tags: TrackTags) -> Data {
+    /// Builds an ID3v2.4 tag from frames (10-byte header + frames).
+    /// Pass `totalContentSize` when the header must encode a padded region larger than the frames.
+    private func buildID3v24Header(frames: Data, totalContentSize: Int? = nil) -> Data {
+        let contentSize = totalContentSize ?? frames.count
+        var header = Data()
+        // ID3v2.4 identifier + version (2.4.0) + no flags
+        header.append(contentsOf: [0x49, 0x44, 0x33, 0x04, 0x00, 0x00])
+        // Syncsafe-encoded total content size (excludes the 10 header bytes)
+        header.append(UInt8((contentSize >> 21) & 0x7F))
+        header.append(UInt8((contentSize >> 14) & 0x7F))
+        header.append(UInt8((contentSize >> 7)  & 0x7F))
+        header.append(UInt8(contentSize & 0x7F))
+        return header + frames
+    }
+
+    private func buildID3Frames(tags: TrackTags) -> Data {
         var frames = Data()
 
         func textFrame(id: String, value: String?) {
             guard let value, !value.isEmpty else { return }
-            // Frame: ID(4) + size(4) + flags(2) + encoding(1) + text
+            // ID3v2.4 frame: ID(4) + syncsafe size(4) + flags(2) + encoding(1) + UTF-8 text
             var frame = Data()
             frame.append(contentsOf: Array(id.utf8))
             let textBytes = Array(value.utf8)
-            let frameSize = 1 + textBytes.count
-            frame.append(UInt8((frameSize >> 24) & 0xFF))
-            frame.append(UInt8((frameSize >> 16) & 0xFF))
-            frame.append(UInt8((frameSize >> 8) & 0xFF))
-            frame.append(UInt8(frameSize & 0xFF))
+            let frameContentSize = 1 + textBytes.count   // encoding byte + text
+            // ID3v2.4 frame size is also syncsafe
+            frame.append(UInt8((frameContentSize >> 21) & 0x7F))
+            frame.append(UInt8((frameContentSize >> 14) & 0x7F))
+            frame.append(UInt8((frameContentSize >> 7)  & 0x7F))
+            frame.append(UInt8(frameContentSize & 0x7F))
             frame.append(contentsOf: [0x00, 0x00])  // flags
-            frame.append(0x03)                        // UTF-8 encoding
+            frame.append(0x03)                        // encoding: UTF-8 (valid in ID3v2.4)
             frame.append(contentsOf: textBytes)
             frames.append(frame)
         }
@@ -133,6 +154,7 @@ actor TagWriter {
         textFrame(id: "TALB", value: tags.album)
         textFrame(id: "TCON", value: tags.genre)
         textFrame(id: "TCOM", value: tags.composer)
+        // TDRC is the correct year/date frame for ID3v2.4 (TYER was v2.3)
         textFrame(id: "TDRC", value: tags.year.map { "\($0)" })
         textFrame(id: "TRCK", value: tags.trackNumber.map { "\($0)" })
         textFrame(id: "TPOS", value: tags.discNumber.map { "\($0)" })
@@ -142,30 +164,27 @@ actor TagWriter {
         if let artData = tags.artworkData {
             var apic = Data()
             apic.append(contentsOf: Array("APIC".utf8))
-            let content: [UInt8] = [0x03]                   // UTF-8
-                + Array("image/jpeg".utf8) + [0x00]         // MIME
-                + [0x03]                                     // cover (front)
-                + [0x00]                                     // description (empty)
+            let content: [UInt8] = [0x03]                       // encoding: UTF-8
+                + Array("image/jpeg".utf8) + [0x00]             // MIME + null terminator
+                + [0x03]                                         // picture type: cover (front)
+                + [0x00]                                         // description: empty string + null
                 + Array(artData)
             let size = content.count
-            apic.append(UInt8((size >> 24) & 0xFF))
-            apic.append(UInt8((size >> 16) & 0xFF))
-            apic.append(UInt8((size >> 8)  & 0xFF))
-            apic.append(UInt8(size & 0xFF))
-            apic.append(contentsOf: [0x00, 0x00])
+            // Syncsafe frame size
+            apic.append(UInt8((size >> 21) & 0x7F))
+            apic.append(UInt8((size >> 14) & 0x7F))
+            apic.append(UInt8((size >> 7)  & 0x7F))
+            apic.append(UInt8(size & 0x7F))
+            apic.append(contentsOf: [0x00, 0x00])  // flags
             apic.append(contentsOf: content)
             frames.append(apic)
         }
 
-        // ID3v2.3 header: "ID3" + version(2.3) + flags + syncsafe size
-        var header = Data()
-        header.append(contentsOf: [0x49, 0x44, 0x33, 0x03, 0x00, 0x00])  // ID3 v2.3.0 no flags
-        let totalSize = frames.count
-        header.append(UInt8((totalSize >> 21) & 0x7F))
-        header.append(UInt8((totalSize >> 14) & 0x7F))
-        header.append(UInt8((totalSize >> 7)  & 0x7F))
-        header.append(UInt8(totalSize & 0x7F))
-        return header + frames
+        return frames
+    }
+
+    private func buildID3Header(tags: TrackTags) -> Data {
+        buildID3v24Header(frames: buildID3Frames(tags: tags))
     }
 
     // MARK: - Vorbis Comments (FLAC only)

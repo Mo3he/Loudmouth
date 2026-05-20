@@ -52,6 +52,9 @@ final class PlaybackService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var currentPathIsStream = false
     private var settingsObserver: NSObjectProtocol?
+    /// Seek offset for the AVAudioEngine path. AVAudioPlayerNode.sampleTime resets to 0
+    /// whenever a new segment is scheduled, so we add this offset to get the file position.
+    private var positionOffset: Double = 0
 
     // MARK: - Init
     init(
@@ -77,9 +80,12 @@ final class PlaybackService: ObservableObject {
         syncEngineSettings()
         settingsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.syncEngineSettings() }
+        ) { [weak self] _ in Task { @MainActor [weak self] in self?.syncEngineSettings() } }
 
         setupRemoteCommandCenter()
+
+        // Restore persisted queue so the user can resume where they left off.
+        restoreQueue()
     }
 
     // MARK: - Playback commands
@@ -132,26 +138,12 @@ final class PlaybackService: ObservableObject {
         } else {
             guard let track = queue.currentTrack else { return }
             state.positionSeconds = seconds
-            // Re-schedule the current file from the new position without re-resolving the URL.
+            positionOffset = seconds
             Task {
                 guard let url = try? await sourceResolver.localURL(for: track),
                       url.isFileURL,
                       let file = try? AVAudioFile(forReading: url) else { return }
-                let sampleRate = file.processingFormat.sampleRate
-                let startSample = AVAudioFramePosition(seconds * sampleRate)
-                let remaining = file.length - startSample
-                guard remaining > 0 else { return }
-                engine.activePlayer.stop()
-                engine.activePlayer.scheduleSegment(
-                    file,
-                    startingFrame: startSample,
-                    frameCount: AVAudioFrameCount(remaining),
-                    at: nil,
-                    completionCallbackType: .dataPlayedBack
-                ) { [weak self] _ in
-                    Task { @MainActor [weak self] in self?.handleTrackFinished() }
-                }
-                engine.activePlayer.play()
+                engine.seekActivePlayer(to: seconds, in: file)
             }
         }
         updateNowPlayingPlaybackRate(state.status == .playing ? 1 : 0)
@@ -164,6 +156,8 @@ final class PlaybackService: ObservableObject {
         // ApplicationMusicPlayer volume is system-controlled; adjust via MPVolumeView.
         state.volume = clamped
     }
+
+    var meterLevels: [Float] { engine.meterLevels }
 
     // MARK: - Queue management (pass-through)
     func enqueue(_ track: Track) { queue.enqueue(track) }
@@ -222,19 +216,13 @@ final class PlaybackService: ObservableObject {
                 currentPathIsStream = false
                 stopStreamPlayer()
                 stopMusicPlayer()
+                positionOffset = seconds
                 var usedEngine = false
                 if let file = try? AVAudioFile(forReading: url),
                    (try? engine.play(file: file, replayGainDB: replayGain)) != nil {
                     usedEngine = true
                     if seconds > 0 {
-                        let sampleRate = file.processingFormat.sampleRate
-                        let startSample = AVAudioFramePosition(seconds * sampleRate)
-                        engine.activePlayer.stop()
-                        await engine.activePlayer.scheduleSegment(file,
-                            startingFrame: startSample,
-                            frameCount: AVAudioFrameCount(file.length - startSample),
-                            at: nil)
-                        engine.activePlayer.play()
+                        engine.seekActivePlayer(to: seconds, in: file)
                     }
                 }
                 if !usedEngine {
@@ -388,7 +376,10 @@ final class PlaybackService: ObservableObject {
                 switch self.musicPlayer.state.playbackStatus {
                 case .playing:  self.state.status = .playing
                 case .paused:   self.state.status = .paused
-                case .stopped, .interrupted: self.state.status = .stopped
+                case .stopped, .interrupted:
+                    // stopMusicPlayer() cancels this subscription before delivering .stopped,
+                    // so reaching here means the track ended naturally — advance the queue.
+                    self.handleTrackFinished()
                 default: break
                 }
             }
@@ -406,7 +397,15 @@ final class PlaybackService: ObservableObject {
         } else if currentPathIsStream {
             streamPlayer.play()
         } else {
-            engine.activePlayer.play()
+            let position = state.positionSeconds
+            Task { [weak self] in
+                guard let self,
+                      let track = self.queue.currentTrack,
+                      let url = try? await self.sourceResolver.localURL(for: track),
+                      url.isFileURL,
+                      let file = try? AVAudioFile(forReading: url) else { return }
+                try? self.engine.resumeActivePlayer(at: position, in: file)
+            }
         }
         state.status = .playing
         updateNowPlayingPlaybackRate(1)
@@ -419,8 +418,9 @@ final class PlaybackService: ObservableObject {
         if queue.repeatMode == .one {
             play()
         } else if queue.nextIndex != nil {
-            if currentPathIsStream {
-                // AVPlayer can't gapless-crossfade; just start the next item.
+            if currentPathIsStream || currentPathIsAppleMusic {
+                // Streams and Apple Music tracks can't use gapless engine handoff;
+                // just advance the index and call play() to start the next item.
                 queue.moveToNext()
                 play()
             } else {
@@ -429,10 +429,16 @@ final class PlaybackService: ObservableObject {
                 queue.moveToNext()
                 state.status = .playing
                 if let track = queue.currentTrack {
+                    // Re-apply ReplayGain for the new active player (former staging player).
+                    let replayGain = UserDefaults.standard.string(forKey: "replayGainMode") == "album"
+                        ? (track.replayGainAlbum ?? track.replayGainTrack)
+                        : track.replayGainTrack
+                    engine.applyReplayGain(replayGain)
                     state.currentTrackID = track.id
                     state.durationSeconds = track.durationSeconds
                     state.positionSeconds = 0
                     state.nowPlayingArtworkCacheKey = track.artworkCacheKey
+                    positionOffset = 0
                     updateNowPlayingInfo(track: track)
                     writeStateToAppGroup()
                     Task { currentLyrics = await lyricsService.lyrics(for: track) }
@@ -477,7 +483,7 @@ final class PlaybackService: ObservableObject {
         guard let nodeTime = engine.activePlayer.lastRenderTime,
               let playerTime = engine.activePlayer.playerTime(forNodeTime: nodeTime),
               let format = queue.currentTrack.map({ _ in engine.activePlayer.outputFormat(forBus: 0) }) else { return }
-        let seconds = Double(playerTime.sampleTime) / format.sampleRate
+        let seconds = Double(playerTime.sampleTime) / format.sampleRate + positionOffset
         state.positionSeconds = seconds
         writeStateToAppGroup()
     }
@@ -511,11 +517,23 @@ final class PlaybackService: ObservableObject {
     // MARK: - Remote Command Center
     private func setupRemoteCommandCenter() {
         let cc = MPRemoteCommandCenter.shared()
-        cc.playCommand.addTarget    { [weak self] _ in self?.resumeOrPlay(); return .success }
-        cc.pauseCommand.addTarget   { [weak self] _ in self?.pause(); return .success }
-        cc.togglePlayPauseCommand.addTarget { [weak self] _ in self?.togglePlayPause(); return .success }
-        cc.nextTrackCommand.addTarget { [weak self] _ in self?.next(); return .success }
-        cc.previousTrackCommand.addTarget { [weak self] _ in self?.previous(); return .success }
+        cc.playCommand.addTarget { [weak self] _ in
+            self?.resumeOrPlay(); return .success
+        }
+        cc.pauseCommand.addTarget { [weak self] _ in
+            // AirPods and many Bluetooth devices always send pauseCommand regardless of
+            // direction — treat it as a toggle so it works as play *and* pause.
+            self?.togglePlayPause(); return .success
+        }
+        cc.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.togglePlayPause(); return .success
+        }
+        cc.nextTrackCommand.addTarget { [weak self] _ in
+            self?.next(); return .success
+        }
+        cc.previousTrackCommand.addTarget { [weak self] _ in
+            self?.previous(); return .success
+        }
         cc.changePlaybackPositionCommand.addTarget { [weak self] event in
             if let e = event as? MPChangePlaybackPositionCommandEvent {
                 self?.seek(to: e.positionTime)
@@ -533,12 +551,27 @@ final class PlaybackService: ObservableObject {
         }
     }
 
-    // MARK: - App Group state (for widget)
+    // MARK: - App Group state (for widget and launch restore)
     private func writeStateToAppGroup() {
         let defaults = UserDefaults(suiteName: "group.net.mohome.kenopsia")
         let encoder = JSONEncoder()
         if let data = try? encoder.encode(state) {
             defaults?.set(data, forKey: "playerState")
         }
+        if let data = try? encoder.encode(queue) {
+            defaults?.set(data, forKey: "playerQueue")
+        }
+    }
+
+    /// Restores queue from the App Group defaults (called once at launch).
+    func restoreQueue() {
+        let defaults = UserDefaults(suiteName: "group.net.mohome.kenopsia")
+        guard let data = defaults?.data(forKey: "playerQueue"),
+              let savedQueue = try? JSONDecoder().decode(Queue.self, from: data) else { return }
+        // Set repeat/shuffle BEFORE replace() so replace() rebuilds the shuffle order
+        // when shuffleMode is on (Queue.replace calls rebuildShuffle if mode != .off).
+        queue.repeatMode = savedQueue.repeatMode
+        queue.shuffleMode = savedQueue.shuffleMode
+        queue.replace(with: savedQueue.tracks, startAt: savedQueue.currentIndex)
     }
 }

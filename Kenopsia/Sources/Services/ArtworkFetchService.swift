@@ -20,6 +20,8 @@ actor ArtworkFetchService {
     private let lastfmURL  = URL(string: "https://ws.audioscrobbler.com/2.0/")!
 
     private var inFlight = Set<String>()   // cache keys currently being fetched
+    // MusicBrainz policy: max 1 req/sec. Track when the last request fired.
+    private var lastMBRequestDate: Date = .distantPast
 
     private init(cache: ArtworkCache = .shared) {
         let config = URLSessionConfiguration.default
@@ -40,6 +42,20 @@ actor ArtworkFetchService {
         guard !inFlight.contains(key)        else { return key }
         inFlight.insert(key)
         defer { inFlight.remove(key) }
+
+        // DLNA tracks embed the artwork URL in the cache key ("dlna_art_<url>").
+        // Download directly from the NAS rather than via MusicBrainz/iTunes/Last.fm.
+        if key.hasPrefix("dlna_art_") {
+            let urlStr = String(key.dropFirst("dlna_art_".count))
+            if let artURL = URL(string: urlStr),
+               let (data, response) = try? await session.data(from: artURL),
+               (response as? HTTPURLResponse)?.statusCode == 200 {
+                cache.store(imageData: data, forKey: key)
+                return key
+            }
+            // Fall through to online lookup if the direct URL fetch failed.
+        }
+
         await fetch(artist: track.artist, album: track.album, cacheKey: key)
         return cache.hasArtwork(forKey: key) ? key : nil
     }
@@ -49,7 +65,6 @@ actor ArtworkFetchService {
         let combined = "\(artist.lowercased()):\(album.lowercased())"
         return combined.data(using: .utf8)
             .map { Data($0).base64EncodedString() }
-            .map { String($0.prefix(40)) }
             ?? ""
     }
 
@@ -77,7 +92,12 @@ actor ArtworkFetchService {
     private func fetchFromMusicBrainz(artist: String, album: String) async -> Data? {
         guard !artist.isEmpty, !album.isEmpty else { return nil }
 
-        // MusicBrainz release search
+        // Enforce MusicBrainz rate limit: 1 request per second.
+        let elapsed = Date().timeIntervalSince(lastMBRequestDate)
+        if elapsed < 1.0 {
+            try? await Task.sleep(nanoseconds: UInt64((1.0 - elapsed) * 1_000_000_000))
+        }
+        lastMBRequestDate = Date()
         var comps = URLComponents(url: mbBaseURL.appendingPathComponent("release"), resolvingAgainstBaseURL: true)!
         let query = #"release:"\#(album.escapedForLucene)" AND artist:"\#(artist.escapedForLucene)""#
         comps.queryItems = [

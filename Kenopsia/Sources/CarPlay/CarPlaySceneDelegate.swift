@@ -14,6 +14,7 @@ import UIKit
 final class CarPlaySceneDelegate: NSObject, CPTemplateApplicationSceneDelegate {
 
     private var interfaceController: CPInterfaceController?
+    private var libraryObserver: NSObjectProtocol?
 
     // MARK: - Scene lifecycle
 
@@ -23,12 +24,30 @@ final class CarPlaySceneDelegate: NSObject, CPTemplateApplicationSceneDelegate {
     ) {
         self.interfaceController = interfaceController
         interfaceController.setRootTemplate(buildRootTemplate(), animated: false, completion: nil)
+
+        // Rebuild the library tab whenever tracks are added or removed.
+        libraryObserver = NotificationCenter.default.addObserver(
+            forName: .libraryDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let controller = self.interfaceController else { return }
+                // The root template is a CPTabBarTemplate. Updating its templates replaces the library tab.
+                if let tabBar = controller.rootTemplate as? CPTabBarTemplate {
+                    let nowPlaying = CPNowPlayingTemplate.shared
+                    nowPlaying.tabTitle = "Now Playing"
+                    nowPlaying.tabImage = UIImage(systemName: "play.circle.fill")
+                    tabBar.updateTemplates([nowPlaying, self.buildLibraryTemplate()])
+                }
+            }
+        }
     }
 
     func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
         didDisconnectInterfaceController interfaceController: CPInterfaceController
     ) {
+        if let obs = libraryObserver { NotificationCenter.default.removeObserver(obs) }
+        libraryObserver = nil
         self.interfaceController = nil
     }
 

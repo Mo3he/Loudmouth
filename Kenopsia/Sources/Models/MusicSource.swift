@@ -10,6 +10,11 @@ struct MusicSource: Identifiable, Codable, Equatable {
     var isEnabled: Bool
     var isPinnedOffline: Bool    // cache for offline listening
 
+    // Populated after each successful scan so the UI can show a status badge
+    // without querying the library.
+    var trackCount: Int = 0
+    var lastScanDate: Date? = nil
+
     // MARK: - Kind-specific config stored as opaque data
     // Decoded by each source adapter using MusicSourceConfig.
     var config: MusicSourceConfig
@@ -88,7 +93,7 @@ struct LocalSourceConfig: Codable, Equatable {
 }
 
 struct NASSourceConfig: Codable, Equatable {
-    var host: String
+    var host: String = ""       // empty = use SSDP auto-discovery at scan time
     var port: Int = 8200        // UPnP default
     var protocol_: NASProtocol = .dlna
     var username: String = ""
@@ -102,7 +107,6 @@ struct SubsonicSourceConfig: Codable, Equatable {
     var serverURL: String       // e.g. "https://music.home.arpa"
     var username: String
     var keychainKey: String     // password / token in Keychain
-    var useLegacyAuth: Bool = false
 }
 
 struct WebRadioSourceConfig: Codable, Equatable {

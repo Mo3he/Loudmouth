@@ -91,7 +91,7 @@ actor LibraryScanner {
         let attrs = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
 
         // Resolve artwork: prefer embedded tag art, fall back to folder art.
-        let artworkCacheKey = resolveArtwork(for: url, embeddedData: meta.artworkData)
+        let artworkCacheKey = resolveArtwork(for: url, embeddedData: meta.artworkData, album: meta.album ?? "")
 
         return Track(
             title:         meta.title ?? url.deletingPathExtension().lastPathComponent,
@@ -124,25 +124,31 @@ actor LibraryScanner {
     ///   2. cover.jpg / cover.png / folder.jpg / folder.png / front.jpg / front.png / AlbumArt.jpg
     ///      in the same directory
     ///   3. Returns nil (will be filled in later by ArtworkFetchService)
-    private func resolveArtwork(for trackURL: URL, embeddedData: Data?) -> String? {
-        // Build a stable cache key from the track's directory (album-level art is shared).
+    private func resolveArtwork(for trackURL: URL, embeddedData: Data?, album: String = "") -> String? {
         let folder = trackURL.deletingLastPathComponent()
-        let cacheKey = folder.path.data(using: .utf8)
+
+        // Use full base64 (no truncation) — iOS paths share a long common prefix
+        // (/private/var/mobile/Containers/…) so truncating to 40 chars makes every
+        // album path produce the same key.
+        let folderKey = folder.path.data(using: .utf8)
             .map { Data($0).base64EncodedString() }
-            .map { String($0.prefix(40)) }
             ?? UUID().uuidString
 
-        // 1. Embedded art
+        // 1. Embedded art: key on folder + album so each album is distinct even in a flat folder.
         if let data = embeddedData, !data.isEmpty {
-            if !artworkCache.hasArtwork(forKey: cacheKey) {
-                artworkCache.store(imageData: data, forKey: cacheKey)
+            let combined = folder.path + ":" + album
+            let embeddedKey = combined.data(using: .utf8)
+                .map { Data($0).base64EncodedString() }
+                ?? UUID().uuidString
+            if !artworkCache.hasArtwork(forKey: embeddedKey) {
+                artworkCache.store(imageData: data, forKey: embeddedKey)
             }
-            return cacheKey
+            return embeddedKey
         }
 
-        // 2. Already cached from a sibling track in the same folder
-        if artworkCache.hasArtwork(forKey: cacheKey) {
-            return cacheKey
+        // 2. Already cached from a sibling track in the same folder (folder art)
+        if artworkCache.hasArtwork(forKey: folderKey) {
+            return folderKey
         }
 
         // 3. Folder art candidates
@@ -155,8 +161,8 @@ actor LibraryScanner {
         for name in candidates {
             let url = folder.appendingPathComponent(name)
             if let data = try? Data(contentsOf: url) {
-                artworkCache.store(imageData: data, forKey: cacheKey)
-                return cacheKey
+                artworkCache.store(imageData: data, forKey: folderKey)
+                return folderKey
             }
         }
 
@@ -302,8 +308,10 @@ extension AudioFormat {
         case "dsd", "dsf", "dff":  self = .dsd
         case "wav":                 self = .wav
         case "aif", "aiff":        self = .aiff
-        case "ape":                 self = .ape
-        case "wv":                  self = .wavpack
+        // APE and WavPack are not decoded by AVFoundation; exclude them so they
+        // don't appear in the library and fail silently at playback.
+        // case "ape":              self = .ape
+        // case "wv":               self = .wavpack
         case "mp3":                 self = .mp3
         case "aac":                 self = .aac
         case "m4a":                 self = .m4a
@@ -313,6 +321,28 @@ extension AudioFormat {
         case "mpc":                 self = .mpc
         case "mp4":                 self = .mp4
         default:                    return nil
+        }
+    }
+
+    /// Maps a DLNA/HTTP MIME type to an AudioFormat so extensionless resource URLs
+    /// (e.g. http://host:8200/MediaItems/123) are not silently dropped.
+    init?(mimeType: String) {
+        let lower = mimeType.lowercased()
+        // Strip any parameters (e.g. "audio/mpeg; charset=utf-8" -> "audio/mpeg")
+        let base = lower.components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces) ?? lower
+        switch base {
+        case "audio/mpeg", "audio/mp3":              self = .mp3
+        case "audio/flac", "audio/x-flac":           self = .flac
+        case "audio/aac", "audio/x-aac":             self = .aac
+        case "audio/mp4", "audio/x-m4a", "audio/m4a": self = .m4a
+        case "audio/ogg", "audio/vorbis":            self = .ogg
+        case "audio/opus":                           self = .opus
+        case "audio/wav", "audio/x-wav":             self = .wav
+        case "audio/aiff", "audio/x-aiff":          self = .aiff
+        case "audio/wma", "audio/x-ms-wma":         self = .wma
+        case "audio/musepack", "audio/x-musepack":  self = .mpc
+        case "video/mp4":                            self = .mp4   // DLNA sometimes serves M4A as video/mp4
+        default:                                     return nil
         }
     }
 }
