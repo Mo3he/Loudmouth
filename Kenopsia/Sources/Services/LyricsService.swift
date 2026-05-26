@@ -63,9 +63,24 @@ actor LyricsService {
     // MARK: - LRCLIB
     private struct LRCLIBResponse: Decodable {
         let syncedLyrics: String?
+        let instrumentalFlag: Bool?   // some results flag instrumentals
+        enum CodingKeys: String, CodingKey {
+            case syncedLyrics
+            case instrumentalFlag = "instrumental"
+        }
+    }
+
+    private struct LRCLIBSearchResult: Decodable {
+        let id: Int
+        let trackName: String
+        let artistName: String
+        let duration: Double?
+        let syncedLyrics: String?
+        let instrumental: Bool?
     }
 
     private func fetchFromLRCLIB(track: Track) async throws -> [LyricsLine] {
+        // 1. Try exact match with /api/get (artist + title + album + duration)
         var comps = URLComponents(url: lrclibBaseURL.appendingPathComponent("get"), resolvingAgainstBaseURL: true)!
         comps.queryItems = [
             URLQueryItem(name: "artist_name", value: track.artist),
@@ -73,16 +88,46 @@ actor LyricsService {
             URLQueryItem(name: "album_name",  value: track.album),
             URLQueryItem(name: "duration",    value: String(Int(track.durationSeconds)))
         ]
-        guard let url = comps.url else { return [] }
-        var req = URLRequest(url: url)
-        req.setValue("Kenopsia/1.0", forHTTPHeaderField: "User-Agent")
+        if let url = comps.url {
+            var req = URLRequest(url: url)
+            req.setValue("Kenopsia/1.0", forHTTPHeaderField: "User-Agent")
+            if let (data, response) = try? await session.data(for: req),
+               (response as? HTTPURLResponse)?.statusCode == 200 {
+                let decoded = try JSONDecoder().decode(LRCLIBResponse.self, from: data)
+                if let synced = decoded.syncedLyrics, !synced.isEmpty {
+                    return parseLRC(content: synced)
+                }
+            }
+        }
 
-        let (data, response) = try await session.data(for: req)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
-
-        let decoded = try JSONDecoder().decode(LRCLIBResponse.self, from: data)
-        guard let synced = decoded.syncedLyrics else { return [] }
+        // 2. Fallback: search by artist + title only, pick best duration match.
+        //    This handles cases where album name or duration differ slightly.
+        let cleanTitle = stripParenthetical(track.title)
+        let cleanArtist = stripParenthetical(track.artist)
+        var searchComps = URLComponents(url: lrclibBaseURL.appendingPathComponent("search"), resolvingAgainstBaseURL: true)!
+        searchComps.queryItems = [
+            URLQueryItem(name: "artist_name", value: cleanArtist),
+            URLQueryItem(name: "track_name",  value: cleanTitle)
+        ]
+        guard let searchURL = searchComps.url else { return [] }
+        var searchReq = URLRequest(url: searchURL)
+        searchReq.setValue("Kenopsia/1.0", forHTTPHeaderField: "User-Agent")
+        let (searchData, searchResponse) = try await session.data(for: searchReq)
+        guard (searchResponse as? HTTPURLResponse)?.statusCode == 200 else { return [] }
+        let results = try JSONDecoder().decode([LRCLIBSearchResult].self, from: searchData)
+        // Pick the result with the closest duration that has synced lyrics
+        let withLyrics = results.filter { $0.syncedLyrics != nil && !($0.syncedLyrics?.isEmpty ?? true) && $0.instrumental != true }
+        guard !withLyrics.isEmpty else { return [] }
+        let best = withLyrics.min(by: { a, b in
+            abs((a.duration ?? 0) - track.durationSeconds) < abs((b.duration ?? 0) - track.durationSeconds)
+        })
+        guard let synced = best?.syncedLyrics else { return [] }
         return parseLRC(content: synced)
+    }
+
+    /// Strips parenthetical suffixes like "(feat. X)", "(Remix)", "[Deluxe Edition]"
+    private func stripParenthetical(_ string: String) -> String {
+        string.replacingOccurrences(of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression)
     }
 
     private func parseLRC(content: String) -> [LyricsLine] {

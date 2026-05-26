@@ -75,6 +75,19 @@ final class ArtworkCache {
         return FileManager.default.fileExists(atPath: url.path)
     }
 
+    /// Remove all cached resolutions for a given key.
+    func remove(forKey key: String) {
+        for size in ArtSize.allCases {
+            let nsKey = (key + size.suffix) as NSString
+            cache(for: size).removeObject(forKey: nsKey)
+            let url = diskURL.appendingPathComponent(safeName(nsKey as String)).appendingPathExtension("jpg")
+            try? FileManager.default.removeItem(at: url)
+        }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.artworkDidUpdate, object: nil, userInfo: ["key": key])
+        }
+    }
+
     // MARK: - Helpers
     private func cache(for size: ArtSize) -> NSCache<NSString, UIImage> {
         switch size {

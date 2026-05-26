@@ -37,8 +37,17 @@ struct LibraryView: View {
         .tint(accent)
     }
 
+    @Environment(\.sidebarToggle) private var sidebarToggle
+
     private var breadcrumbHeader: some View {
         HStack(spacing: 6) {
+            if let sidebarToggle {
+                Button(action: sidebarToggle) {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 15))
+                }
+                .padding(.trailing, 4)
+            }
             Text("LIBRARY")
                 .foregroundStyle(.primary)
             Spacer()
@@ -52,6 +61,8 @@ struct LibraryView: View {
 
     private var statsBar: some View {
         HStack(spacing: 6) {
+            Text("\(library.artists.count) ARTISTS")
+            Text("·").foregroundStyle(.primary.opacity(0.2))
             Text("\(library.albums.count) ALBUMS")
             Text("·").foregroundStyle(.primary.opacity(0.2))
             Text("\(library.tracks.count) TRACKS")
@@ -256,38 +267,36 @@ struct AlbumListView: View {
         alphaGroup(library.filteredAlbums, key: \.title)
     }
     private var letters: [String] { sections.map(\.letter) }
+    private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
 
     var body: some View {
         ZStack(alignment: .trailing) {
             ScrollViewReader { proxy in
-                List {
-                    ForEach(sections, id: \.letter) { section in
-                        Section {
-                            Text(section.letter)
-                                .id(section.letter)
-                                .font(.system(size: 11, weight: .bold))
-                                .tracking(1.5)
-                                .foregroundStyle(.primary.opacity(0.35))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 2, trailing: 20))
-                            ForEach(section.items) { album in
-                                NavigationLink(destination: AlbumDetailView(album: album)) {
-                                    AlbumRowView(album: album)
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(sections, id: \.letter) { section in
+                            Section {
+                                ForEach(section.items) { album in
+                                    NavigationLink(destination: AlbumDetailView(album: album)) {
+                                        AlbumGridCell(album: album)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
-                                .listRowSeparator(.hidden)
+                            } header: {
+                                Text(section.letter)
+                                    .id(section.letter)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .tracking(1.5)
+                                    .foregroundStyle(.primary.opacity(0.35))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 6)
                             }
                         }
-                        .listSectionSeparator(.hidden)
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, player.state.status != .stopped ? 66 : 0)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
                 .scrollDismissesKeyboard(.immediately)
-                .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
                 .onChange(of: activeLetter) { _, letter in
                     if let letter {
                         withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(letter, anchor: .top) }
@@ -298,6 +307,68 @@ struct AlbumListView: View {
                 AlphabetScrubber(letters: letters, onSelect: { activeLetter = $0 })
                     .padding(.trailing, 4)
                     .padding(.bottom, player.state.status != .stopped ? 66 : 0)
+            }
+        }
+    }
+}
+struct AlbumGridCell: View {
+    let album: Album
+    @State private var artworkImage: UIImage?
+    @State private var resolvedKey: String?
+
+    private var albumHue: Double {
+        Double(abs(album.id.hashValue) % 100) / 100
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Group {
+                if let img = artworkImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color(hue: albumHue, saturation: 0.35, brightness: 0.28)
+                        .overlay {
+                            Text(album.title.prefix(1))
+                                .font(.system(size: 36, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.45))
+                        }
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(album.title)
+                    .font(.system(.caption, design: .default).bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(album.artist.uppercased())
+                    .font(.system(size: 8, weight: .medium))
+                    .tracking(0.8)
+                    .foregroundStyle(.primary.opacity(0.4))
+                    .lineLimit(1)
+            }
+        }
+        .onAppear { loadArtwork() }
+        .onReceive(NotificationCenter.default.publisher(for: ArtworkCache.artworkDidUpdate)) { notification in
+            guard let key = notification.userInfo?["key"] as? String,
+                  key == resolvedKey else { return }
+            loadArtwork()
+        }
+    }
+
+    private func loadArtwork() {
+        let key = album.artworkCacheKey
+            ?? ArtworkFetchService.generateCacheKey(artist: album.artist, album: album.title)
+        resolvedKey = key
+        artworkImage = ArtworkCache.shared.gridImage(forKey: key)
+        if artworkImage == nil {
+            Task {
+                await ArtworkFetchService.shared.fetchAlbumArtIfNeeded(
+                    artist: album.artist, album: album.title
+                )
             }
         }
     }
@@ -390,37 +461,36 @@ struct ArtistListView: View {
         alphaGroup(library.filteredArtists, key: \.name)
     }
     private var letters: [String] { sections.map(\.letter) }
+    private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
 
     var body: some View {
         ZStack(alignment: .trailing) {
             ScrollViewReader { proxy in
-                List {
-                    ForEach(sections, id: \.letter) { section in
-                        Section {
-                            Text(section.letter)
-                                .id(section.letter)
-                                .font(.system(size: 11, weight: .bold))
-                                .tracking(1.5)
-                                .foregroundStyle(.primary.opacity(0.35))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 2, trailing: 20))
-                            ForEach(section.items) { artist in
-                                NavigationLink(destination: ArtistDetailView(artist: artist)) {
-                                    ArtistRowView(artist: artist)
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(sections, id: \.letter) { section in
+                            Section {
+                                ForEach(section.items) { artist in
+                                    NavigationLink(destination: ArtistDetailView(artist: artist)) {
+                                        ArtistGridCell(artist: artist)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .listRowBackground(Color.clear)
-                                .listRowSeparatorTint(Color.primary.opacity(0.06))
+                            } header: {
+                                Text(section.letter)
+                                    .id(section.letter)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .tracking(1.5)
+                                    .foregroundStyle(.primary.opacity(0.35))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 6)
                             }
                         }
-                        .listSectionSeparator(.hidden)
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, player.state.status != .stopped ? 66 : 0)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
                 .scrollDismissesKeyboard(.immediately)
-                .contentMargins(.bottom, player.state.status != .stopped ? 66 : 0, for: .scrollContent)
                 .onChange(of: activeLetter) { _, letter in
                     if let letter {
                         withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(letter, anchor: .top) }
@@ -432,6 +502,64 @@ struct ArtistListView: View {
                     .padding(.trailing, 4)
                     .padding(.bottom, player.state.status != .stopped ? 66 : 0)
             }
+        }
+    }
+}
+
+// MARK: - ArtistGridCell
+struct ArtistGridCell: View {
+    let artist: Artist
+    @State private var artworkImage: UIImage?
+    @State private var resolvedKey: String?
+
+    private var placeholderHue: Double {
+        Double(abs(artist.id.hashValue) % 100) / 100
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Group {
+                if let img = artworkImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color(hue: placeholderHue, saturation: 0.35, brightness: 0.28)
+                        .overlay {
+                            Text(artist.name.prefix(1))
+                                .font(.system(size: 36, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.45))
+                        }
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(artist.name)
+                    .font(.system(.caption, design: .default).bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("\(artist.albumIDs.count) ALBUM\(artist.albumIDs.count == 1 ? "" : "S")")
+                    .font(.system(size: 8, weight: .medium))
+                    .tracking(0.8)
+                    .foregroundStyle(.primary.opacity(0.4))
+            }
+        }
+        .onAppear { loadArtwork() }
+        .onReceive(NotificationCenter.default.publisher(for: ArtworkCache.artworkDidUpdate)) { notification in
+            guard let key = notification.userInfo?["key"] as? String,
+                  key == resolvedKey else { return }
+            loadArtwork()
+        }
+    }
+
+    private func loadArtwork() {
+        let key = ArtworkFetchService.generateArtistPhotoKey(name: artist.name)
+        resolvedKey = key
+        artworkImage = ArtworkCache.shared.gridImage(forKey: key)
+        if artworkImage == nil {
+            Task { await ArtworkFetchService.shared.fetchArtistPhotoIfNeeded(name: artist.name) }
         }
     }
 }
@@ -484,9 +612,12 @@ struct ArtistRowView: View {
     }
 
     private func loadArtwork() {
-        guard let key = artist.artworkCacheKey else { return }
+        let key = ArtworkFetchService.generateArtistPhotoKey(name: artist.name)
         resolvedKey = key
         artworkImage = ArtworkCache.shared.gridImage(forKey: key)
+        if artworkImage == nil {
+            Task { await ArtworkFetchService.shared.fetchArtistPhotoIfNeeded(name: artist.name) }
+        }
     }
 }
 
@@ -780,6 +911,10 @@ struct AlbumDetailView: View {
     @State private var artworkImage: UIImage?
     @State private var editingTrack: Track?
     @State private var showingAlbumEditor = false
+    @State private var isIdentifying = false
+    @State private var identifyProgress: Double = 0
+    @State private var identifyStatus: String = ""
+    private let tagWriter = TagWriter()
 
     var tracks: [Track] {
         album.trackIDs.compactMap { library.track(for: $0) }
@@ -839,14 +974,49 @@ struct AlbumDetailView: View {
                     .foregroundStyle(.primary)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingAlbumEditor = true } label: {
-                    Image(systemName: "pencil")
+                Menu {
+                    Button {
+                        showingAlbumEditor = true
+                    } label: {
+                        Label("Edit Album", systemImage: "pencil")
+                    }
+                    Button {
+                        Task { await identifyAllTracks() }
+                    } label: {
+                        Label("Identify Tracks", systemImage: "waveform.and.magnifyingglass")
+                    }
+                    .disabled(isIdentifying || tracks.allSatisfy {
+                        if case .localFile = $0.uri { return false } else { return true }
+                    })
+                    Button {
+                        Task { await fixArtwork() }
+                    } label: {
+                        Label("Fix Artwork", systemImage: "photo.badge.arrow.down")
+                    }
+                    .disabled(isIdentifying)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                         .foregroundStyle(.primary)
                 }
             }
         }
         .toolbarBackground(Color.kBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .overlay(alignment: .bottom) {
+            if isIdentifying {
+                VStack(spacing: 8) {
+                    ProgressView(value: identifyProgress)
+                    Text(identifyStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .padding()
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding()
+            }
+        }
         .sheet(isPresented: $showingAlbumEditor) {
             AlbumEditorView(album: album)
                 .environmentObject(library)
@@ -859,6 +1029,59 @@ struct AlbumDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: ArtworkCache.artworkDidUpdate)) { _ in
             loadArtwork()
         }
+    }
+
+    /// Runs ShazamKit identification on every local file in this album whose
+    /// metadata is incomplete, and applies whatever fields the result provides.
+    private func identifyAllTracks() async {
+        let candidates = tracks.filter { track in
+            guard case .localFile = track.uri else { return false }
+            return track.artist.isEmpty
+                || track.album.isEmpty
+                || track.genre.isEmpty
+                || track.year == nil
+        }
+        guard !candidates.isEmpty else {
+            identifyStatus = "All tracks already have complete metadata."
+            isIdentifying = true
+            identifyProgress = 1
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            isIdentifying = false
+            return
+        }
+        isIdentifying = true
+        identifyProgress = 0
+        for (idx, track) in candidates.enumerated() {
+            identifyStatus = "Identifying: \(track.title.isEmpty ? "track \(idx + 1)" : track.title)"
+            if case .localFile(let path) = track.uri {
+                do {
+                    let meta = try await MusicRecognitionService.shared.recognize(
+                        localURL: URL(fileURLWithPath: path)
+                    )
+                    await MetadataApplier.apply(meta: meta, to: track, library: library, writer: tagWriter)
+                } catch {
+                    // Skip and continue — failures are individual, not fatal.
+                }
+            }
+            identifyProgress = Double(idx + 1) / Double(candidates.count)
+        }
+        identifyStatus = "Done."
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        isIdentifying = false
+    }
+
+    /// Re-fetches album artwork via the same pipeline the Artwork Fixer uses
+    /// (MusicBrainz → iTunes → Last.fm) and stamps the cache key on every track.
+    private func fixArtwork() async {
+        isIdentifying = true
+        identifyProgress = 0
+        identifyStatus = "Fetching artwork…"
+        let success = await ArtworkApplier.fetchAndApply(album: album, library: library)
+        identifyProgress = 1
+        identifyStatus = success ? "Artwork updated." : "No artwork found online — try Edit Album → Choose Artwork."
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        isIdentifying = false
+        loadArtwork()
     }
 
     private var albumHeader: some View {
@@ -968,13 +1191,31 @@ struct MetaChip: View {
 struct DetailTrackRow: View {
     let track: Track
     let index: Int
+    var showArtwork: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(String(format: "%02d", index))
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.primary.opacity(0.2))
-                .frame(width: 24, alignment: .trailing)
+            if showArtwork {
+                Group {
+                    if let key = track.artworkCacheKey,
+                       let img = ArtworkCache.shared.thumbnailImage(forKey: key) {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(.quaternary)
+                            .overlay { Image(systemName: "music.note").font(.system(size: 10)).foregroundStyle(.tertiary) }
+                    }
+                }
+                .frame(width: 36, height: 36)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            } else {
+                Text(String(format: "%02d", index))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.primary.opacity(0.2))
+                    .frame(width: 24, alignment: .trailing)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
                     .font(.subheadline.bold())
@@ -1280,7 +1521,7 @@ struct FolderDetailView: View {
                 .padding(.vertical, 16)
 
                 ForEach(Array(sortedTracks.enumerated()), id: \.element.id) { idx, track in
-                    DetailTrackRow(track: track, index: idx + 1)
+                    DetailTrackRow(track: track, index: idx + 1, showArtwork: true)
                         .contentShape(Rectangle())
                         .onTapGesture { player.play(tracks: sortedTracks, startAt: idx) }
                 }

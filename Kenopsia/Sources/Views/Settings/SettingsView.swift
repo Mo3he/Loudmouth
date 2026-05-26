@@ -29,7 +29,14 @@ struct SettingsView: View {
                         Text("Light").tag("light")
                         Text("Dark").tag("dark")
                     }
-                    ColorPicker("Accent Color", selection: accentColorBinding)
+                    HStack {
+                        ColorPicker("Accent Color", selection: accentColorBinding)
+                        if accentColorHex != "00D9E6" {
+                            Button("Reset") { accentColorHex = "00D9E6" }
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     Toggle("Spectrum Analyzer", isOn: $vuMeterEnabled)
                 }
 
@@ -79,9 +86,16 @@ struct SettingsView: View {
 
                 Section("About") {
                     LabeledContent("Version", value: appVersion)
-                    NavigationLink("Privacy Policy") { PrivacyPolicyView() }
                     Link(destination: URL(string: "https://buymeacoffee.com/Mo3he")!) {
                         Label("Buy Me a Coffee", systemImage: "cup.and.heat.waves.fill")
+                    }
+                    Link(destination: URL(string: "mailto:feedback@mohome.net")!) {
+                        Label("Send Feedback", systemImage: "envelope")
+                            .foregroundStyle(.primary)
+                    }
+                    Link(destination: URL(string: "https://mo3he.github.io/Kenopsia/privacy")!) {
+                        Text("Privacy Policy")
+                            .foregroundStyle(.primary)
                     }
                 }
             }
@@ -279,13 +293,8 @@ struct AirPlayPickerView: UIViewRepresentable {
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
-struct PrivacyPolicyView: View {
-    var body: some View { Text("No tracking. No ads. No accounts required.").navigationTitle("Privacy") }
-}
-
 // MARK: - SidebarView (iPad / Mac)
 struct SidebarView: View {
-    @EnvironmentObject var search: SearchViewModel
     var body: some View {
         List {
             NavigationLink(destination: LibraryView()) {
@@ -293,9 +302,6 @@ struct SidebarView: View {
             }
             NavigationLink(destination: VibeView()) {
                 Label("Vibe", systemImage: "waveform.circle.fill")
-            }
-            NavigationLink(destination: SearchView().environmentObject(search)) {
-                Label("Search", systemImage: "magnifyingglass")
             }
             NavigationLink(destination: SourcesView()) {
                 Label("Sources", systemImage: "externaldrive")

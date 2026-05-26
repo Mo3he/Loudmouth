@@ -133,7 +133,11 @@ enum TrackURI: Hashable, Codable {
     /// used for deduplication across rescans.
     var stableKey: String {
         switch self {
-        case .localFile(let path):                     return "local:\(path)"
+        case .localFile(let path):
+            // Resolve symlinks so /var/... and /private/var/... (same on iOS/macOS)
+            // always produce the same key, preventing duplicates across rescans.
+            let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            return "local:\(canonical)"
         case .remoteURL(let url):                      return "remote:\(url.absoluteString)"
         case .subsonicID(let sid, let tid):            return "subsonic:\(sid):\(tid)"
         case .dlnaURL(let url):                        return "dlna:\(url.absoluteString)"
@@ -159,6 +163,37 @@ enum AudioFormat: String, Codable, CaseIterable {
     }
 
     var displayName: String { rawValue.uppercased() }
+
+    /// Common file extension for this format (used when creating temp files).
+    var fileExtension: String {
+        switch self {
+        case .alac: "m4a"
+        case .aiff: "aiff"
+        case .wavpack: "wv"
+        default: rawValue
+        }
+    }
+
+    /// MIME type for use in HTTP Content-Type headers (e.g. when serving to Chromecast).
+    var mimeType: String {
+        switch self {
+        case .mp3:     "audio/mpeg"
+        case .aac:     "audio/aac"
+        case .m4a:     "audio/mp4"
+        case .alac:    "audio/mp4"
+        case .flac:    "audio/flac"
+        case .wav:     "audio/wav"
+        case .aiff:    "audio/aiff"
+        case .ogg:     "audio/ogg"
+        case .opus:    "audio/opus"
+        case .wma:     "audio/x-ms-wma"
+        case .mpc:     "audio/musepack"
+        case .ape:     "audio/ape"
+        case .wavpack: "audio/x-wavpack"
+        case .dsd:     "audio/dsd"
+        case .mp4:     "video/mp4"
+        }
+    }
 }
 
 // MARK: - CloudProvider

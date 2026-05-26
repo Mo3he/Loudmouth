@@ -13,58 +13,116 @@
 		101F711DFFAC009644E4544D /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A82B5EFAC938D8AA31257572 /* Theme.swift */; };
 		105026E1F08537C5A4E8ED00 /* PlayerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A941EF5A64D8C910F8A2E7 /* PlayerState.swift */; };
 		11044E394C7932489117D0BC /* KenopsiaWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3C957D8F7FB2151F0A63233 /* KenopsiaWatchApp.swift */; };
+		133312028F93D084B094D345 /* vicious_05.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 678100598B244209CE165C28 /* vicious_05.mp3 */; };
 		15FDB74A4BF2348C907390D7 /* SmartPlaylistEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85847FA5D2CA86253CA969E8 /* SmartPlaylistEditorView.swift */; };
+		1955EF78C1A53DDAD12D636E /* MaterialDialogs.bundle in Resources */ = {isa = PBXBuildFile; fileRef = CC95FC7A8684282ECF41E626 /* MaterialDialogs.bundle */; };
 		1A2F5CBB23920971AAF6BD18 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A8234CF6AC94BC03AA34BA10 /* PrivacyInfo.xcprivacy */; };
+		1B4DF7F3027EBB17D331332E /* minrs_05.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 5D8773CE624D12A0E07358A4 /* minrs_05.mp3 */; };
+		1D2C9E745ED4A596C1B294B3 /* virtual_aria.jpg in Resources */ = {isa = PBXBuildFile; fileRef = F166EA96B982DCB7F78581D0 /* virtual_aria.jpg */; };
 		1D8FD5B9E840758DE68B0F9D /* LibraryScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B714E2113B2E2AE3E7AA2C5 /* LibraryScanner.swift */; };
 		1EB650CCE3792386CB09E077 /* QueueAndPlaylistTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D990598A3A601CDACE12FE /* QueueAndPlaylistTests.swift */; };
 		21B9D38D7040D5B18DE0077C /* OfflineCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02A5964814A9722620E09632 /* OfflineCacheService.swift */; };
 		2C2E7B2F9C5A8846851E7C91 /* LibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 382D2D228ACDF8DE4FE0F414 /* LibraryViewModel.swift */; };
 		3057FC286219BFDE8591CDC6 /* SmartPlaylistEvaluatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB451A86C7C00F5A7022B7E7 /* SmartPlaylistEvaluatorTests.swift */; };
+		323AF22041C06FE14165A125 /* idea_01.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B319F74123FDB8827A574E76 /* idea_01.mp3 */; };
 		33B4192E56C96F14D4EEE26E /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412C971425D1FD66F2D36593 /* LibraryView.swift */; };
 		39FFD3BC78B15EE11EC92FF8 /* PlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B54B4E183BD14D40AB1B143 /* PlaybackService.swift */; };
+		3CBC67E1B9972D7E4858DB2B /* virtual_lena.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 5B0A0593D19EA6B383B536EF /* virtual_lena.jpg */; };
+		42F49A97CFCC9CF875EF9319 /* artist_chris_zabriskie.jpg in Resources */ = {isa = PBXBuildFile; fileRef = E5D4B169157FA1F4FB59EAC1 /* artist_chris_zabriskie.jpg */; };
+		43005D24513A20B3CD12D2C4 /* minrs_03.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = E424DDC2D0BDD366CFBAE076 /* minrs_03.mp3 */; };
 		48FBAC1999B2C6D98A7061EC /* AlbumEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCEFB466F27BA8E6BB3A6312 /* AlbumEditorView.swift */; };
+		497CD685AC340E8D34B2BF20 /* ScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B4B3B296A7FBF585AA3EF7 /* ScreenshotTests.swift */; };
+		4A5F51E5D05AB87266C36320 /* cylinders_03.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 9C57E0FFC44D8455FA2C0571 /* cylinders_03.mp3 */; };
 		4D66135A69BBA6FA3BE8F2C0 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9058F6EF32797DA6DF72427A /* NowPlayingView.swift */; };
+		4ED87F5D9531C31EB0CD361F /* KenopsiaWatchScreenshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89319C2837E07DF5C6667BEE /* KenopsiaWatchScreenshots.swift */; };
 		5174990BB6E0861FFBF49615 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913F47C740EBBB8FA985FF19 /* LibraryStore.swift */; };
 		55B84D4FBCE46C40F69E15C5 /* TagEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBF2C267AB191792D2CAFE23 /* TagEditorView.swift */; };
+		56DF4E98B84BA85BCE85DEFB /* PlaybackLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C74561052357D9CF97787A7 /* PlaybackLogger.swift */; };
 		5C72D0059EBF97290B0BB2B1 /* KenopsiaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B8DC180D4745CA6522E950F /* KenopsiaApp.swift */; };
+		5F5582E3C7D33CA75B9B5257 /* vicious_02.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B658058D0F8EF838B670DD5E /* vicious_02.mp3 */; };
+		61D8A792E96592675D86386F /* GoogleCastCoreResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 306B439739768DF02394C46C /* GoogleCastCoreResources.bundle */; };
 		621F591EC2EC97EFB2E106B1 /* KenopsiaWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F09103609A7F5DB996FCDB8A /* KenopsiaWidgetBundle.swift */; };
 		653B65720035895627239540 /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE01FEA55F31C349B5ED6DA1 /* SearchViewModel.swift */; };
 		6812D5527BE25F6A0BC434DD /* MiniPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF67D77FD4C6A95CD20ECA8D /* MiniPlayerView.swift */; };
 		6BCBD2F14527AEF3B86154AF /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5271F17F31FA49CFAF6D1FD8 /* SettingsView.swift */; };
+		704B0731074ECD34A70B4E37 /* album_vicious.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 067A5302013087DCE947D038 /* album_vicious.jpg */; };
+		727899C01200576D9CDC755A /* CastButtonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9247383D47294FD8F73DC162 /* CastButtonView.swift */; };
+		72A3B77A79128362320734ED /* DemoDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B0284FE9927377AFA4E6BD3 /* DemoDataProvider.swift */; };
+		766FCB60563520184D905A28 /* virtual_jade.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B88ECB7ADCA45BFB9DE9DDA3 /* virtual_jade.jpg */; };
 		773477F014E0B5057D46908B /* WatchConnectivityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F696B5BCFE7E07DDF6B4DFB /* WatchConnectivityService.swift */; };
+		788894B7D480EC9A94B44022 /* super_01.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 24A475F171F012FE6709FF67 /* super_01.mp3 */; };
 		78D614C3DACF07DF77D5CF2E /* MusicRecognitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6B9C9C4B60C9BAA9A24DC0A /* MusicRecognitionService.swift */; };
 		79BC7812174EE9771F7C9735 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB1CB506657F6CCAA8923D8F /* Assets.xcassets */; };
+		7A39D55FDC2CFC4C54041160 /* album_cylinders.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 5B57D12024A560E27BD46739 /* album_cylinders.jpg */; };
+		7BF2983F9C79A587DFBA08B6 /* super_04.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = DA43845A06CE9E3E5AEC8C66 /* super_04.mp3 */; };
+		7D35FFE0BD781A5EE5E2A725 /* GoogleCastOptionalUIResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = ABC75EE6DF8B8495BC96F63C /* GoogleCastOptionalUIResources.bundle */; };
+		7D76C7751D2CC167B7D70004 /* GoogleSansMedium.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 5BCB72E8127BDF85426A822A /* GoogleSansMedium.bundle */; };
 		7F4A4F1CE833BDCB56C0716D /* ListeningStatsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE026C35D02CECB6F52206AD /* ListeningStatsStore.swift */; };
 		7F57AF7D72F496EECF430DCF /* AppleMusicService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64213BBF9F204D15CA0BF38 /* AppleMusicService.swift */; };
+		80877D52ED78EA0A360C267E /* idea_03.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 38251002BC66DBA9A9631EE8 /* idea_03.mp3 */; };
 		80BBAB9D0A94A6EA7E0064FF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E65E219107D626184D56E9A5 /* Assets.xcassets */; };
+		81B206FFA2DC5068C1A6D41F /* album_super.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 1B9DEC4626386361088D0ED6 /* album_super.jpg */; };
+		82448C246FF1B7366F8C4869 /* minrs_01.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 7C812E204FF717A049A35239 /* minrs_01.mp3 */; };
 		86E76F59A98748927D9786F1 /* LyricsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B7F83873306258402DEDA6 /* LyricsView.swift */; };
 		8768AC88D3D50B5A35B2BA17 /* KenopsiaWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 40436B394C3671CBF76B0EB6 /* KenopsiaWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8A03269939EFF94E7BFB277A /* artist_lee_rosevere.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 8A1176591A8B8352EFA40D64 /* artist_lee_rosevere.jpg */; };
 		8A4C26DFAB13E96EE9BE7C92 /* EQView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFEFB8974BF889E8488628B /* EQView.swift */; };
 		8AA699360A5ACA63360A095C /* KenopsiaWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11716226C7AD0DC1934C80A /* KenopsiaWidget.swift */; };
 		8AE938524EB405D73A839F0A /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D841906237C393DBA22554 /* AudioEngine.swift */; };
+		8D6AD781480870978E0241E9 /* idea_05.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = E02F715878B174F1DC831B4A /* idea_05.mp3 */; };
+		913EF22011BA1824E70ACFAD /* minrs_02.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A50C1296A54E26B3CBA85297 /* minrs_02.mp3 */; };
+		921937DA7AF3500E1767954A /* GoogleCastUIResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 8C4A00D04EEAF76C5DD67DD9 /* GoogleCastUIResources.bundle */; };
 		94BF7C0FCB97A5DECE29007B /* QueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909FFCFA083D9ABCD920CFD8 /* QueueView.swift */; };
+		96AB4A9C9EFC299B5EF5A546 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 71A5FA1ED80449A27AF8A5CF /* SystemConfiguration.framework */; };
+		97A0E9DE227012AE405E16D0 /* super_02.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 872A4C505173E08A66620184 /* super_02.mp3 */; };
+		9904FEF530E0EE8C062D8394 /* super_05.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 6BED8E2D5C4115046EB704FE /* super_05.mp3 */; };
 		9B298C865ABBD19B5F883097 /* SubsonicModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D601164BD3EE0735B9034DE0 /* SubsonicModels.swift */; };
+		9D4877865C3AE2A02C5B43F0 /* vicious_04.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 37C01BCA48A79C914A9EA317 /* vicious_04.mp3 */; };
+		9D9DFBFAA8AD2BEB39CB8163 /* album_idea.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A2C5BACFE5271CA0E8A4B614 /* album_idea.jpg */; };
+		9EAEB0E8FC3178D540708EBB /* artist_jahzzar.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 1B3BEE1246F77C338B23EFC0 /* artist_jahzzar.jpg */; };
 		9F0F318A4FCA8657F870FC27 /* MetadataFixerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2572EA4D7F01ABFF6C911C2B /* MetadataFixerView.swift */; };
 		A441DF25E463BA6A8034C8F6 /* TagWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B71DAFCF15B48F13B22EA2D /* TagWriter.swift */; };
 		A4B89ABBE19950D0257566E3 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C193B53D36D357C1E53ED92 /* Queue.swift */; };
+		A6F540F22B4E90B87BEDDCB8 /* album_minrs.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 8021754E837AC35A13D7E8A0 /* album_minrs.jpg */; };
 		A80A76AD82B90CE8F566F720 /* LyricsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A496F5D40C0A22F9E25ADE /* LyricsService.swift */; };
+		A96E2613B231582724DC0C01 /* GoogleCast.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6243C8EF0C95E497EE79FFEF /* GoogleCast.xcframework */; };
+		AA1BE876640AE0832E05ED54 /* vicious_03.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D758312759DECAF123A3F5D6 /* vicious_03.mp3 */; };
 		AFE72452E4C9D75A0E5800FC /* PhoneConnectivityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2EEFA4E7D10A6E976090F1 /* PhoneConnectivityService.swift */; };
 		B014E10369BA49E52EDB8859 /* Album.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDCF99530AA34126F5FDD6C /* Album.swift */; };
 		B8AEA8B542456607A742A93E /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3077C7E1940D4279E4D6B51 /* CarPlaySceneDelegate.swift */; };
+		BC079C3D8AE8EB1CBE094E82 /* super_03.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = E14DAB52C26E6489A8F7364E /* super_03.mp3 */; };
+		BD84105D7233DE18258A8504 /* cylinders_01.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 15ACF490A85BE66EC056A24D /* cylinders_01.mp3 */; };
 		BDFA3114357E0272F8E38E6F /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EDC9CDB4C1F38F0C4BB5209 /* PlayerViewModel.swift */; };
+		BE5D6A422F0C9CB70C1A198E /* idea_02.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 40D6131C9F8E538CB61B3558 /* idea_02.mp3 */; };
 		C5755A0C32EAB13437BBC908 /* ArtworkFixerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFD4B550C0CBDF5B49834B7 /* ArtworkFixerView.swift */; };
+		C5AFC6534AF8339113A35C7F /* cylinders_02.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = BA7320D7B62412C044423857 /* cylinders_02.mp3 */; };
+		C6E31B93C83F2E0AF2D4773D /* virtual_mara.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 3503178B23E6CED16A1F51F5 /* virtual_mara.jpg */; };
+		C7F681114AEB1AF156E323BE /* cylinders_04.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B5F2DF02ABABDDA03B3EC121 /* cylinders_04.mp3 */; };
+		C8B356BE0DB1A170410266A5 /* virtual_cosmo.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 0538968B1E97E9E13F7DBB04 /* virtual_cosmo.jpg */; };
+		C9846536C6AD61D1C4A19837 /* GoogleSansRegular.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 1924185016326DBBB43659DC /* GoogleSansRegular.bundle */; };
 		CD15888EF9015F82E1E06BC5 /* SourceResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CCDF0A1C9711DB29F5EA7A2 /* SourceResolver.swift */; };
 		CD94CDE290C1ED2EA4E715DC /* MusicSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B4CFB69AA00CD97366869E6 /* MusicSource.swift */; };
+		CD9BD984D599925C964800D5 /* idea_04.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = CFAC1B02CA84D7888CE52B39 /* idea_04.mp3 */; };
 		CE4877331A075DADA3107017 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E44F8391C0C510220ACA22 /* NowPlayingView.swift */; };
 		CE9551C97BE2EFE4137EFCB6 /* VibeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A345E0D6FF7F215E6AEE8D6 /* VibeView.swift */; };
+		CF10FD157A50A91D59CA9DDD /* virtual_kyle.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 4FEB1C1D80FDEC834764952D /* virtual_kyle.jpg */; };
+		D2292F9571E231C7B98EC1AD /* artist_kevin_macleod.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B8D535A626753C934C1B356A /* artist_kevin_macleod.jpg */; };
 		D7FB2568BE06171F2A5632FB /* ArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADDA74815DA49F1C1F3246C /* ArtworkCache.swift */; };
 		DE486B750F13BA589ADA3C21 /* SourceViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CE26A133E764760BF7F7BD9 /* SourceViewModel.swift */; };
+		E07D32B821FD5D81CA50ECA5 /* CastStubs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC5AEFD231263676594A380 /* CastStubs.swift */; };
 		E0BF1CCCADD978DCE947BEE1 /* KenopsiaWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D917D124283DA316A796BD72 /* KenopsiaWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E294E60AA52BF0D1F1F09BE8 /* GoogleSansBold.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 839E22A26406A54FDE8D7484 /* GoogleSansBold.bundle */; };
+		E6D6267278544DB0BEE9CDD2 /* CastHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA1F8BB89CA7EC0A6B72B6B /* CastHTTPServer.swift */; };
+		EEA7B110064948F531D8F7C3 /* ChromecastService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63D275DF37C87307C844F0A1 /* ChromecastService.swift */; };
+		F01099C71900681FAD1D5554 /* cylinders_05.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D4E7718B2C7DDEF58AF3FDE9 /* cylinders_05.mp3 */; };
+		F07045228E4CAB6098A081FF /* artist_kai_engel.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 93D33E1B3C567916FA796796 /* artist_kai_engel.jpg */; };
 		F1D32BED55078034ECE49FD2 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EE131D50110B0FD2D313BA /* OnboardingView.swift */; };
 		F284F08C07BBF523D6AE41FC /* Playlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = C483B308368A4B7A14DE73B1 /* Playlist.swift */; };
 		F52C7DA68B598E81FC6EB3C6 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 139C263FD8F74B67DF7753C4 /* SearchView.swift */; };
 		F97793A8B1968E83038B5A79 /* Track.swift in Sources */ = {isa = PBXBuildFile; fileRef = B261A0376A2AD232731440F0 /* Track.swift */; };
+		F9C4145C0EB6A7D5ABF79C2F /* vicious_01.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = C68C44FB1583D7FEF22772D5 /* vicious_01.mp3 */; };
 		FD2E0BB12AEC99BC358F492D /* DLNABrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E6ECC3A730C0F48CABBC256 /* DLNABrowser.swift */; };
+		FF1BFB50227F419FB89F173F /* minrs_04.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = C2AD1D17BD9E8655C3E16F4D /* minrs_04.mp3 */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +132,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = CA983D0868E5F4B9E61A5175;
 			remoteInfo = KenopsiaWidget;
+		};
+		8A9B19031A30AED30FF45F7E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EAABB8DC55A3DC08EA2E4ED1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8E7F0BF35C771CD745C6FF17;
+			remoteInfo = KenopsiaWatch;
+		};
+		BDE344A24712CCA4F02122CC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EAABB8DC55A3DC08EA2E4ED1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C139513D39CCCB27D6FA273D;
+			remoteInfo = Kenopsia;
 		};
 		BF13D0E0B6794B1FBA74E6CE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -118,66 +190,138 @@
 
 /* Begin PBXFileReference section */
 		02A5964814A9722620E09632 /* OfflineCacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineCacheService.swift; sourceTree = "<group>"; };
-		057EB1C17013B8FA10E8F716 /* KenopsiaTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = KenopsiaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0538968B1E97E9E13F7DBB04 /* virtual_cosmo.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = virtual_cosmo.jpg; sourceTree = "<group>"; };
+		057EB1C17013B8FA10E8F716 /* KenopsiaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KenopsiaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		067A5302013087DCE947D038 /* album_vicious.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = album_vicious.jpg; sourceTree = "<group>"; };
+		0AC5AEFD231263676594A380 /* CastStubs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CastStubs.swift; sourceTree = "<group>"; };
 		0AFEFB8974BF889E8488628B /* EQView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQView.swift; sourceTree = "<group>"; };
+		0C74561052357D9CF97787A7 /* PlaybackLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackLogger.swift; sourceTree = "<group>"; };
 		139C263FD8F74B67DF7753C4 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
+		15ACF490A85BE66EC056A24D /* cylinders_01.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = cylinders_01.mp3; sourceTree = "<group>"; };
+		1924185016326DBBB43659DC /* GoogleSansRegular.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansRegular.bundle; sourceTree = "<group>"; };
+		1B3BEE1246F77C338B23EFC0 /* artist_jahzzar.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = artist_jahzzar.jpg; sourceTree = "<group>"; };
 		1B4CFB69AA00CD97366869E6 /* MusicSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicSource.swift; sourceTree = "<group>"; };
+		1B9DEC4626386361088D0ED6 /* album_super.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = album_super.jpg; sourceTree = "<group>"; };
 		1E6ECC3A730C0F48CABBC256 /* DLNABrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DLNABrowser.swift; sourceTree = "<group>"; };
 		1EDCF99530AA34126F5FDD6C /* Album.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Album.swift; sourceTree = "<group>"; };
+		24A475F171F012FE6709FF67 /* super_01.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = super_01.mp3; sourceTree = "<group>"; };
 		2572EA4D7F01ABFF6C911C2B /* MetadataFixerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataFixerView.swift; sourceTree = "<group>"; };
 		29EE131D50110B0FD2D313BA /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		2CFD4B550C0CBDF5B49834B7 /* ArtworkFixerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkFixerView.swift; sourceTree = "<group>"; };
+		2DA1F8BB89CA7EC0A6B72B6B /* CastHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CastHTTPServer.swift; sourceTree = "<group>"; };
+		306B439739768DF02394C46C /* GoogleCastCoreResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastCoreResources.bundle; sourceTree = "<group>"; };
 		30B7F83873306258402DEDA6 /* LyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsView.swift; sourceTree = "<group>"; };
+		3503178B23E6CED16A1F51F5 /* virtual_mara.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = virtual_mara.jpg; sourceTree = "<group>"; };
 		36D990598A3A601CDACE12FE /* QueueAndPlaylistTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueAndPlaylistTests.swift; sourceTree = "<group>"; };
+		37C01BCA48A79C914A9EA317 /* vicious_04.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = vicious_04.mp3; sourceTree = "<group>"; };
+		38251002BC66DBA9A9631EE8 /* idea_03.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = idea_03.mp3; sourceTree = "<group>"; };
 		382D2D228ACDF8DE4FE0F414 /* LibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModel.swift; sourceTree = "<group>"; };
 		40436B394C3671CBF76B0EB6 /* KenopsiaWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KenopsiaWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		40D6131C9F8E538CB61B3558 /* idea_02.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = idea_02.mp3; sourceTree = "<group>"; };
 		412C971425D1FD66F2D36593 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		4CCDF0A1C9711DB29F5EA7A2 /* SourceResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceResolver.swift; sourceTree = "<group>"; };
 		4EDC9CDB4C1F38F0C4BB5209 /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
+		4FEB1C1D80FDEC834764952D /* virtual_kyle.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = virtual_kyle.jpg; sourceTree = "<group>"; };
 		5271F17F31FA49CFAF6D1FD8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		52D841906237C393DBA22554 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
 		5A345E0D6FF7F215E6AEE8D6 /* VibeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibeView.swift; sourceTree = "<group>"; };
+		5B0A0593D19EA6B383B536EF /* virtual_lena.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = virtual_lena.jpg; sourceTree = "<group>"; };
+		5B57D12024A560E27BD46739 /* album_cylinders.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = album_cylinders.jpg; sourceTree = "<group>"; };
+		5BCB72E8127BDF85426A822A /* GoogleSansMedium.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansMedium.bundle; sourceTree = "<group>"; };
+		5D8773CE624D12A0E07358A4 /* minrs_05.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = minrs_05.mp3; sourceTree = "<group>"; };
 		5F696B5BCFE7E07DDF6B4DFB /* WatchConnectivityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityService.swift; sourceTree = "<group>"; };
+		6243C8EF0C95E497EE79FFEF /* GoogleCast.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GoogleCast.xcframework; path = Frameworks/GoogleCast.xcframework; sourceTree = "<group>"; };
+		63D275DF37C87307C844F0A1 /* ChromecastService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromecastService.swift; sourceTree = "<group>"; };
+		678100598B244209CE165C28 /* vicious_05.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = vicious_05.mp3; sourceTree = "<group>"; };
+		6B0284FE9927377AFA4E6BD3 /* DemoDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoDataProvider.swift; sourceTree = "<group>"; };
 		6B54B4E183BD14D40AB1B143 /* PlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackService.swift; sourceTree = "<group>"; };
-		71D3E6D4916BCA078F4BEFB3 /* Kenopsia.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Kenopsia.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6BED8E2D5C4115046EB704FE /* super_05.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = super_05.mp3; sourceTree = "<group>"; };
+		71A5FA1ED80449A27AF8A5CF /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
+		71D3E6D4916BCA078F4BEFB3 /* Kenopsia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kenopsia.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B714E2113B2E2AE3E7AA2C5 /* LibraryScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryScanner.swift; sourceTree = "<group>"; };
 		7B71DAFCF15B48F13B22EA2D /* TagWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagWriter.swift; sourceTree = "<group>"; };
 		7C193B53D36D357C1E53ED92 /* Queue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Queue.swift; sourceTree = "<group>"; };
+		7C812E204FF717A049A35239 /* minrs_01.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = minrs_01.mp3; sourceTree = "<group>"; };
+		8021754E837AC35A13D7E8A0 /* album_minrs.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = album_minrs.jpg; sourceTree = "<group>"; };
+		839E22A26406A54FDE8D7484 /* GoogleSansBold.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansBold.bundle; sourceTree = "<group>"; };
 		85847FA5D2CA86253CA969E8 /* SmartPlaylistEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartPlaylistEditorView.swift; sourceTree = "<group>"; };
+		872A4C505173E08A66620184 /* super_02.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = super_02.mp3; sourceTree = "<group>"; };
+		89319C2837E07DF5C6667BEE /* KenopsiaWatchScreenshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KenopsiaWatchScreenshots.swift; sourceTree = "<group>"; };
+		8A1176591A8B8352EFA40D64 /* artist_lee_rosevere.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = artist_lee_rosevere.jpg; sourceTree = "<group>"; };
+		8C4A00D04EEAF76C5DD67DD9 /* GoogleCastUIResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastUIResources.bundle; sourceTree = "<group>"; };
 		9058F6EF32797DA6DF72427A /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
 		909FFCFA083D9ABCD920CFD8 /* QueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueView.swift; sourceTree = "<group>"; };
 		913F47C740EBBB8FA985FF19 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStore.swift; sourceTree = "<group>"; };
+		9247383D47294FD8F73DC162 /* CastButtonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CastButtonView.swift; sourceTree = "<group>"; };
+		93D33E1B3C567916FA796796 /* artist_kai_engel.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = artist_kai_engel.jpg; sourceTree = "<group>"; };
 		9ADDA74815DA49F1C1F3246C /* ArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkCache.swift; sourceTree = "<group>"; };
 		9B8DC180D4745CA6522E950F /* KenopsiaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KenopsiaApp.swift; sourceTree = "<group>"; };
+		9BD2E8E7217462E44128895B /* KenopsiaWatchScreenshots.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KenopsiaWatchScreenshots.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9C57E0FFC44D8455FA2C0571 /* cylinders_03.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = cylinders_03.mp3; sourceTree = "<group>"; };
 		9CE26A133E764760BF7F7BD9 /* SourceViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceViewModel.swift; sourceTree = "<group>"; };
 		A11716226C7AD0DC1934C80A /* KenopsiaWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KenopsiaWidget.swift; sourceTree = "<group>"; };
-		A8234CF6AC94BC03AA34BA10 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A2C5BACFE5271CA0E8A4B614 /* album_idea.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = album_idea.jpg; sourceTree = "<group>"; };
+		A50C1296A54E26B3CBA85297 /* minrs_02.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = minrs_02.mp3; sourceTree = "<group>"; };
+		A8234CF6AC94BC03AA34BA10 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A82B5EFAC938D8AA31257572 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		AB1CB506657F6CCAA8923D8F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		ABC75EE6DF8B8495BC96F63C /* GoogleCastOptionalUIResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastOptionalUIResources.bundle; sourceTree = "<group>"; };
 		B261A0376A2AD232731440F0 /* Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Track.swift; sourceTree = "<group>"; };
+		B319F74123FDB8827A574E76 /* idea_01.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = idea_01.mp3; sourceTree = "<group>"; };
+		B4EFE0F562B29C5DC8F57983 /* KenopsiaScreenshots.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KenopsiaScreenshots.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B5F2DF02ABABDDA03B3EC121 /* cylinders_04.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = cylinders_04.mp3; sourceTree = "<group>"; };
 		B64213BBF9F204D15CA0BF38 /* AppleMusicService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicService.swift; sourceTree = "<group>"; };
+		B658058D0F8EF838B670DD5E /* vicious_02.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = vicious_02.mp3; sourceTree = "<group>"; };
+		B88ECB7ADCA45BFB9DE9DDA3 /* virtual_jade.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = virtual_jade.jpg; sourceTree = "<group>"; };
+		B8D535A626753C934C1B356A /* artist_kevin_macleod.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = artist_kevin_macleod.jpg; sourceTree = "<group>"; };
+		BA7320D7B62412C044423857 /* cylinders_02.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = cylinders_02.mp3; sourceTree = "<group>"; };
 		C05D77E6BAAB5D2C1D3EABBA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		C2AD1D17BD9E8655C3E16F4D /* minrs_04.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = minrs_04.mp3; sourceTree = "<group>"; };
 		C483B308368A4B7A14DE73B1 /* Playlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playlist.swift; sourceTree = "<group>"; };
+		C4B4B3B296A7FBF585AA3EF7 /* ScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTests.swift; sourceTree = "<group>"; };
+		C68C44FB1583D7FEF22772D5 /* vicious_01.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = vicious_01.mp3; sourceTree = "<group>"; };
 		C6B9C9C4B60C9BAA9A24DC0A /* MusicRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicRecognitionService.swift; sourceTree = "<group>"; };
 		CBF2C267AB191792D2CAFE23 /* TagEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditorView.swift; sourceTree = "<group>"; };
+		CC95FC7A8684282ECF41E626 /* MaterialDialogs.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = MaterialDialogs.bundle; sourceTree = "<group>"; };
 		CF67D77FD4C6A95CD20ECA8D /* MiniPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerView.swift; sourceTree = "<group>"; };
+		CFAC1B02CA84D7888CE52B39 /* idea_04.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = idea_04.mp3; sourceTree = "<group>"; };
 		D3C957D8F7FB2151F0A63233 /* KenopsiaWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KenopsiaWatchApp.swift; sourceTree = "<group>"; };
+		D4E7718B2C7DDEF58AF3FDE9 /* cylinders_05.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = cylinders_05.mp3; sourceTree = "<group>"; };
 		D601164BD3EE0735B9034DE0 /* SubsonicModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubsonicModels.swift; sourceTree = "<group>"; };
-		D917D124283DA316A796BD72 /* KenopsiaWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KenopsiaWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D758312759DECAF123A3F5D6 /* vicious_03.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = vicious_03.mp3; sourceTree = "<group>"; };
+		D917D124283DA316A796BD72 /* KenopsiaWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KenopsiaWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		DA43845A06CE9E3E5AEC8C66 /* super_04.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = super_04.mp3; sourceTree = "<group>"; };
 		DCEFB466F27BA8E6BB3A6312 /* AlbumEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumEditorView.swift; sourceTree = "<group>"; };
 		DE01FEA55F31C349B5ED6DA1 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
 		DF2EEFA4E7D10A6E976090F1 /* PhoneConnectivityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneConnectivityService.swift; sourceTree = "<group>"; };
+		E02F715878B174F1DC831B4A /* idea_05.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = idea_05.mp3; sourceTree = "<group>"; };
+		E14DAB52C26E6489A8F7364E /* super_03.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = super_03.mp3; sourceTree = "<group>"; };
 		E2A941EF5A64D8C910F8A2E7 /* PlayerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerState.swift; sourceTree = "<group>"; };
 		E30035785E2BF73E657B184C /* ArtworkFetchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkFetchService.swift; sourceTree = "<group>"; };
 		E3077C7E1940D4279E4D6B51 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
+		E424DDC2D0BDD366CFBAE076 /* minrs_03.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = minrs_03.mp3; sourceTree = "<group>"; };
+		E5D4B169157FA1F4FB59EAC1 /* artist_chris_zabriskie.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = artist_chris_zabriskie.jpg; sourceTree = "<group>"; };
 		E65E219107D626184D56E9A5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EB451A86C7C00F5A7022B7E7 /* SmartPlaylistEvaluatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartPlaylistEvaluatorTests.swift; sourceTree = "<group>"; };
 		F09103609A7F5DB996FCDB8A /* KenopsiaWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KenopsiaWidgetBundle.swift; sourceTree = "<group>"; };
+		F166EA96B982DCB7F78581D0 /* virtual_aria.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = virtual_aria.jpg; sourceTree = "<group>"; };
 		F4A496F5D40C0A22F9E25ADE /* LyricsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsService.swift; sourceTree = "<group>"; };
 		F5E44F8391C0C510220ACA22 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
 		FBCA4DA9B388916EDDA0B3DD /* SourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourcesView.swift; sourceTree = "<group>"; };
 		FE026C35D02CECB6F52206AD /* ListeningStatsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatsStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9FF0D6C476A460F641AAB915 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A96E2613B231582724DC0C01 /* GoogleCast.xcframework in Frameworks */,
+				96AB4A9C9EFC299B5EF5A546 /* SystemConfiguration.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		055A43A135FB4150E5AD5E3A /* Settings */ = {
@@ -186,6 +330,44 @@
 				5271F17F31FA49CFAF6D1FD8 /* SettingsView.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		0F2589CABD3472BE7FC761BB /* GoogleCast.framework */ = {
+			isa = PBXGroup;
+			children = (
+				306B439739768DF02394C46C /* GoogleCastCoreResources.bundle */,
+				ABC75EE6DF8B8495BC96F63C /* GoogleCastOptionalUIResources.bundle */,
+				8C4A00D04EEAF76C5DD67DD9 /* GoogleCastUIResources.bundle */,
+				839E22A26406A54FDE8D7484 /* GoogleSansBold.bundle */,
+				5BCB72E8127BDF85426A822A /* GoogleSansMedium.bundle */,
+				1924185016326DBBB43659DC /* GoogleSansRegular.bundle */,
+				CC95FC7A8684282ECF41E626 /* MaterialDialogs.bundle */,
+			);
+			name = GoogleCast.framework;
+			path = "Frameworks/GoogleCast.xcframework/ios-arm64/GoogleCast.framework";
+			sourceTree = "<group>";
+		};
+		11EAC8787FF16C3B80B85D62 /* Artwork */ = {
+			isa = PBXGroup;
+			children = (
+				5B57D12024A560E27BD46739 /* album_cylinders.jpg */,
+				A2C5BACFE5271CA0E8A4B614 /* album_idea.jpg */,
+				8021754E837AC35A13D7E8A0 /* album_minrs.jpg */,
+				1B9DEC4626386361088D0ED6 /* album_super.jpg */,
+				067A5302013087DCE947D038 /* album_vicious.jpg */,
+				E5D4B169157FA1F4FB59EAC1 /* artist_chris_zabriskie.jpg */,
+				1B3BEE1246F77C338B23EFC0 /* artist_jahzzar.jpg */,
+				93D33E1B3C567916FA796796 /* artist_kai_engel.jpg */,
+				B8D535A626753C934C1B356A /* artist_kevin_macleod.jpg */,
+				8A1176591A8B8352EFA40D64 /* artist_lee_rosevere.jpg */,
+				F166EA96B982DCB7F78581D0 /* virtual_aria.jpg */,
+				0538968B1E97E9E13F7DBB04 /* virtual_cosmo.jpg */,
+				B88ECB7ADCA45BFB9DE9DDA3 /* virtual_jade.jpg */,
+				4FEB1C1D80FDEC834764952D /* virtual_kyle.jpg */,
+				5B0A0593D19EA6B383B536EF /* virtual_lena.jpg */,
+				3503178B23E6CED16A1F51F5 /* virtual_mara.jpg */,
+			);
+			path = Artwork;
 			sourceTree = "<group>";
 		};
 		12A328FCA75283E17686FD7B /* Resources */ = {
@@ -221,6 +403,46 @@
 				D3BE6750F3E74ECBFC9F8A83 /* Sources */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		308A2E37EE53F5B667399BF1 /* KenopsiaScreenshots */ = {
+			isa = PBXGroup;
+			children = (
+				C4B4B3B296A7FBF585AA3EF7 /* ScreenshotTests.swift */,
+			);
+			path = KenopsiaScreenshots;
+			sourceTree = "<group>";
+		};
+		37F3F08EEB8CB380523EB21F /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				15ACF490A85BE66EC056A24D /* cylinders_01.mp3 */,
+				BA7320D7B62412C044423857 /* cylinders_02.mp3 */,
+				9C57E0FFC44D8455FA2C0571 /* cylinders_03.mp3 */,
+				B5F2DF02ABABDDA03B3EC121 /* cylinders_04.mp3 */,
+				D4E7718B2C7DDEF58AF3FDE9 /* cylinders_05.mp3 */,
+				B319F74123FDB8827A574E76 /* idea_01.mp3 */,
+				40D6131C9F8E538CB61B3558 /* idea_02.mp3 */,
+				38251002BC66DBA9A9631EE8 /* idea_03.mp3 */,
+				CFAC1B02CA84D7888CE52B39 /* idea_04.mp3 */,
+				E02F715878B174F1DC831B4A /* idea_05.mp3 */,
+				7C812E204FF717A049A35239 /* minrs_01.mp3 */,
+				A50C1296A54E26B3CBA85297 /* minrs_02.mp3 */,
+				E424DDC2D0BDD366CFBAE076 /* minrs_03.mp3 */,
+				C2AD1D17BD9E8655C3E16F4D /* minrs_04.mp3 */,
+				5D8773CE624D12A0E07358A4 /* minrs_05.mp3 */,
+				24A475F171F012FE6709FF67 /* super_01.mp3 */,
+				872A4C505173E08A66620184 /* super_02.mp3 */,
+				E14DAB52C26E6489A8F7364E /* super_03.mp3 */,
+				DA43845A06CE9E3E5AEC8C66 /* super_04.mp3 */,
+				6BED8E2D5C4115046EB704FE /* super_05.mp3 */,
+				C68C44FB1583D7FEF22772D5 /* vicious_01.mp3 */,
+				B658058D0F8EF838B670DD5E /* vicious_02.mp3 */,
+				D758312759DECAF123A3F5D6 /* vicious_03.mp3 */,
+				37C01BCA48A79C914A9EA317 /* vicious_04.mp3 */,
+				678100598B244209CE165C28 /* vicious_05.mp3 */,
+			);
+			path = Audio;
 			sourceTree = "<group>";
 		};
 		397477BFAED7D918B4B5B843 /* Sources */ = {
@@ -280,6 +502,7 @@
 		600AB50ED9C0ACDA9C01C3F2 /* NowPlaying */ = {
 			isa = PBXGroup;
 			children = (
+				9247383D47294FD8F73DC162 /* CastButtonView.swift */,
 				0AFEFB8974BF889E8488628B /* EQView.swift */,
 				30B7F83873306258402DEDA6 /* LyricsView.swift */,
 				CF67D77FD4C6A95CD20ECA8D /* MiniPlayerView.swift */,
@@ -319,6 +542,16 @@
 			path = KenopsiaWidget/Sources;
 			sourceTree = "<group>";
 		};
+		744AC0684851C1C8FD2D15CB /* DemoAssets */ = {
+			isa = PBXGroup;
+			children = (
+				11EAC8787FF16C3B80B85D62 /* Artwork */,
+				37F3F08EEB8CB380523EB21F /* Audio */,
+			);
+			name = DemoAssets;
+			path = Kenopsia/DemoAssets;
+			sourceTree = "<group>";
+		};
 		939877BDFD34C9BFE548B633 /* Kenopsia */ = {
 			isa = PBXGroup;
 			children = (
@@ -348,6 +581,14 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
+		A47AB2F804285E01E2388926 /* KenopsiaWatchScreenshots */ = {
+			isa = PBXGroup;
+			children = (
+				89319C2837E07DF5C6667BEE /* KenopsiaWatchScreenshots.swift */,
+			);
+			path = KenopsiaWatchScreenshots;
+			sourceTree = "<group>";
+		};
 		A86AD1C1AF23F23508D48CFD /* Library */ = {
 			isa = PBXGroup;
 			children = (
@@ -374,8 +615,10 @@
 			isa = PBXGroup;
 			children = (
 				71D3E6D4916BCA078F4BEFB3 /* Kenopsia.app */,
+				B4EFE0F562B29C5DC8F57983 /* KenopsiaScreenshots.xctest */,
 				057EB1C17013B8FA10E8F716 /* KenopsiaTests.xctest */,
 				40436B394C3671CBF76B0EB6 /* KenopsiaWatch.app */,
+				9BD2E8E7217462E44128895B /* KenopsiaWatchScreenshots.xctest */,
 				D917D124283DA316A796BD72 /* KenopsiaWidget.appex */,
 			);
 			name = Products;
@@ -388,6 +631,10 @@
 				9ADDA74815DA49F1C1F3246C /* ArtworkCache.swift */,
 				E30035785E2BF73E657B184C /* ArtworkFetchService.swift */,
 				52D841906237C393DBA22554 /* AudioEngine.swift */,
+				2DA1F8BB89CA7EC0A6B72B6B /* CastHTTPServer.swift */,
+				0AC5AEFD231263676594A380 /* CastStubs.swift */,
+				63D275DF37C87307C844F0A1 /* ChromecastService.swift */,
+				6B0284FE9927377AFA4E6BD3 /* DemoDataProvider.swift */,
 				1E6ECC3A730C0F48CABBC256 /* DLNABrowser.swift */,
 				7B714E2113B2E2AE3E7AA2C5 /* LibraryScanner.swift */,
 				913F47C740EBBB8FA985FF19 /* LibraryStore.swift */,
@@ -395,6 +642,7 @@
 				F4A496F5D40C0A22F9E25ADE /* LyricsService.swift */,
 				C6B9C9C4B60C9BAA9A24DC0A /* MusicRecognitionService.swift */,
 				02A5964814A9722620E09632 /* OfflineCacheService.swift */,
+				0C74561052357D9CF97787A7 /* PlaybackLogger.swift */,
 				6B54B4E183BD14D40AB1B143 /* PlaybackService.swift */,
 				4CCDF0A1C9711DB29F5EA7A2 /* SourceResolver.swift */,
 				D601164BD3EE0735B9034DE0 /* SubsonicModels.swift */,
@@ -407,15 +655,29 @@
 		DB8755A921E4D17332D29DAB = {
 			isa = PBXGroup;
 			children = (
+				744AC0684851C1C8FD2D15CB /* DemoAssets */,
+				0F2589CABD3472BE7FC761BB /* GoogleCast.framework */,
 				939877BDFD34C9BFE548B633 /* Kenopsia */,
+				308A2E37EE53F5B667399BF1 /* KenopsiaScreenshots */,
 				FA097D30A8338D4D9B1958A6 /* KenopsiaTests */,
+				A47AB2F804285E01E2388926 /* KenopsiaWatchScreenshots */,
 				12A328FCA75283E17686FD7B /* Resources */,
 				6E787844F0153FC46EF98F7B /* Resources */,
 				397477BFAED7D918B4B5B843 /* Sources */,
 				6CAAF643966612DB9375F6BD /* Sources */,
 				7252A1BF0785AE491C549D80 /* Sources */,
+				DD31B9B97D176F45A47EFABD /* Frameworks */,
 				D6C38ED8E6EABBDCE543584B /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		DD31B9B97D176F45A47EFABD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				6243C8EF0C95E497EE79FFEF /* GoogleCast.xcframework */,
+				71A5FA1ED80449A27AF8A5CF /* SystemConfiguration.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		E512ECD4231CCF62ADC65DFD /* Onboarding */ = {
@@ -456,6 +718,42 @@
 			productReference = 057EB1C17013B8FA10E8F716 /* KenopsiaTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		072E87F04F5D30F6C794E94F /* KenopsiaScreenshots */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4026C27AB5FE3C18F6351D12 /* Build configuration list for PBXNativeTarget "KenopsiaScreenshots" */;
+			buildPhases = (
+				497EDAFFEA69EF94704170F0 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9E36A6A38D67079E8CD4AD70 /* PBXTargetDependency */,
+			);
+			name = KenopsiaScreenshots;
+			packageProductDependencies = (
+			);
+			productName = KenopsiaScreenshots;
+			productReference = B4EFE0F562B29C5DC8F57983 /* KenopsiaScreenshots.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		88000229A3D206204F616FD5 /* KenopsiaWatchScreenshots */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F3BC4F4F534C9F41F1AC05E2 /* Build configuration list for PBXNativeTarget "KenopsiaWatchScreenshots" */;
+			buildPhases = (
+				F729B5F30D2AA840813BE2EB /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				10BB6336D1D96FCFAF5D35C1 /* PBXTargetDependency */,
+			);
+			name = KenopsiaWatchScreenshots;
+			packageProductDependencies = (
+			);
+			productName = KenopsiaWatchScreenshots;
+			productReference = 9BD2E8E7217462E44128895B /* KenopsiaWatchScreenshots.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		8E7F0BF35C771CD745C6FF17 /* KenopsiaWatch */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 8835E1AC08B092A35A764D76 /* Build configuration list for PBXNativeTarget "KenopsiaWatch" */;
@@ -480,6 +778,7 @@
 			buildPhases = (
 				1635F1F187032EFF4634DDDD /* Sources */,
 				653A64B21F98CF3BD1180038 /* Resources */,
+				9FF0D6C476A460F641AAB915 /* Frameworks */,
 				1E4FCDA18EB1B2984C1CDB97 /* Embed Foundation Extensions */,
 				0718B40C4D6E2A5FEB3B10D7 /* Embed Watch Content */,
 			);
@@ -520,11 +819,21 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					04697484DF48FA50C44330E3 = {
 						DevelopmentTeam = KTX2SJ3P98;
 						ProvisioningStyle = Automatic;
+					};
+					072E87F04F5D30F6C794E94F = {
+						DevelopmentTeam = KTX2SJ3P98;
+						ProvisioningStyle = Automatic;
+						TestTargetID = C139513D39CCCB27D6FA273D;
+					};
+					88000229A3D206204F616FD5 = {
+						DevelopmentTeam = KTX2SJ3P98;
+						ProvisioningStyle = Automatic;
+						TestTargetID = 8E7F0BF35C771CD745C6FF17;
 					};
 					8E7F0BF35C771CD745C6FF17 = {
 						DevelopmentTeam = KTX2SJ3P98;
@@ -555,8 +864,10 @@
 			projectRoot = "";
 			targets = (
 				C139513D39CCCB27D6FA273D /* Kenopsia */,
+				072E87F04F5D30F6C794E94F /* KenopsiaScreenshots */,
 				04697484DF48FA50C44330E3 /* KenopsiaTests */,
 				8E7F0BF35C771CD745C6FF17 /* KenopsiaWatch */,
+				88000229A3D206204F616FD5 /* KenopsiaWatchScreenshots */,
 				CA983D0868E5F4B9E61A5175 /* KenopsiaWidget */,
 			);
 		};
@@ -576,7 +887,55 @@
 			buildActionMask = 2147483647;
 			files = (
 				80BBAB9D0A94A6EA7E0064FF /* Assets.xcassets in Resources */,
+				61D8A792E96592675D86386F /* GoogleCastCoreResources.bundle in Resources */,
+				7D35FFE0BD781A5EE5E2A725 /* GoogleCastOptionalUIResources.bundle in Resources */,
+				921937DA7AF3500E1767954A /* GoogleCastUIResources.bundle in Resources */,
+				E294E60AA52BF0D1F1F09BE8 /* GoogleSansBold.bundle in Resources */,
+				7D76C7751D2CC167B7D70004 /* GoogleSansMedium.bundle in Resources */,
+				C9846536C6AD61D1C4A19837 /* GoogleSansRegular.bundle in Resources */,
+				1955EF78C1A53DDAD12D636E /* MaterialDialogs.bundle in Resources */,
 				1A2F5CBB23920971AAF6BD18 /* PrivacyInfo.xcprivacy in Resources */,
+				7A39D55FDC2CFC4C54041160 /* album_cylinders.jpg in Resources */,
+				9D9DFBFAA8AD2BEB39CB8163 /* album_idea.jpg in Resources */,
+				A6F540F22B4E90B87BEDDCB8 /* album_minrs.jpg in Resources */,
+				81B206FFA2DC5068C1A6D41F /* album_super.jpg in Resources */,
+				704B0731074ECD34A70B4E37 /* album_vicious.jpg in Resources */,
+				42F49A97CFCC9CF875EF9319 /* artist_chris_zabriskie.jpg in Resources */,
+				9EAEB0E8FC3178D540708EBB /* artist_jahzzar.jpg in Resources */,
+				F07045228E4CAB6098A081FF /* artist_kai_engel.jpg in Resources */,
+				D2292F9571E231C7B98EC1AD /* artist_kevin_macleod.jpg in Resources */,
+				8A03269939EFF94E7BFB277A /* artist_lee_rosevere.jpg in Resources */,
+				BD84105D7233DE18258A8504 /* cylinders_01.mp3 in Resources */,
+				C5AFC6534AF8339113A35C7F /* cylinders_02.mp3 in Resources */,
+				4A5F51E5D05AB87266C36320 /* cylinders_03.mp3 in Resources */,
+				C7F681114AEB1AF156E323BE /* cylinders_04.mp3 in Resources */,
+				F01099C71900681FAD1D5554 /* cylinders_05.mp3 in Resources */,
+				323AF22041C06FE14165A125 /* idea_01.mp3 in Resources */,
+				BE5D6A422F0C9CB70C1A198E /* idea_02.mp3 in Resources */,
+				80877D52ED78EA0A360C267E /* idea_03.mp3 in Resources */,
+				CD9BD984D599925C964800D5 /* idea_04.mp3 in Resources */,
+				8D6AD781480870978E0241E9 /* idea_05.mp3 in Resources */,
+				82448C246FF1B7366F8C4869 /* minrs_01.mp3 in Resources */,
+				913EF22011BA1824E70ACFAD /* minrs_02.mp3 in Resources */,
+				43005D24513A20B3CD12D2C4 /* minrs_03.mp3 in Resources */,
+				FF1BFB50227F419FB89F173F /* minrs_04.mp3 in Resources */,
+				1B4DF7F3027EBB17D331332E /* minrs_05.mp3 in Resources */,
+				788894B7D480EC9A94B44022 /* super_01.mp3 in Resources */,
+				97A0E9DE227012AE405E16D0 /* super_02.mp3 in Resources */,
+				BC079C3D8AE8EB1CBE094E82 /* super_03.mp3 in Resources */,
+				7BF2983F9C79A587DFBA08B6 /* super_04.mp3 in Resources */,
+				9904FEF530E0EE8C062D8394 /* super_05.mp3 in Resources */,
+				F9C4145C0EB6A7D5ABF79C2F /* vicious_01.mp3 in Resources */,
+				5F5582E3C7D33CA75B9B5257 /* vicious_02.mp3 in Resources */,
+				AA1BE876640AE0832E05ED54 /* vicious_03.mp3 in Resources */,
+				9D4877865C3AE2A02C5B43F0 /* vicious_04.mp3 in Resources */,
+				133312028F93D084B094D345 /* vicious_05.mp3 in Resources */,
+				1D2C9E745ED4A596C1B294B3 /* virtual_aria.jpg in Resources */,
+				C8B356BE0DB1A170410266A5 /* virtual_cosmo.jpg in Resources */,
+				766FCB60563520184D905A28 /* virtual_jade.jpg in Resources */,
+				CF10FD157A50A91D59CA9DDD /* virtual_kyle.jpg in Resources */,
+				3CBC67E1B9972D7E4858DB2B /* virtual_lena.jpg in Resources */,
+				C6E31B93C83F2E0AF2D4773D /* virtual_mara.jpg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -595,8 +954,13 @@
 				C5755A0C32EAB13437BBC908 /* ArtworkFixerView.swift in Sources */,
 				8AE938524EB405D73A839F0A /* AudioEngine.swift in Sources */,
 				B8AEA8B542456607A742A93E /* CarPlaySceneDelegate.swift in Sources */,
+				727899C01200576D9CDC755A /* CastButtonView.swift in Sources */,
+				E6D6267278544DB0BEE9CDD2 /* CastHTTPServer.swift in Sources */,
+				E07D32B821FD5D81CA50ECA5 /* CastStubs.swift in Sources */,
+				EEA7B110064948F531D8F7C3 /* ChromecastService.swift in Sources */,
 				0D2E3DEB233DE759354B3C0F /* ContentView.swift in Sources */,
 				FD2E0BB12AEC99BC358F492D /* DLNABrowser.swift in Sources */,
+				72A3B77A79128362320734ED /* DemoDataProvider.swift in Sources */,
 				8A4C26DFAB13E96EE9BE7C92 /* EQView.swift in Sources */,
 				5C72D0059EBF97290B0BB2B1 /* KenopsiaApp.swift in Sources */,
 				1D8FD5B9E840758DE68B0F9D /* LibraryScanner.swift in Sources */,
@@ -613,6 +977,7 @@
 				CE4877331A075DADA3107017 /* NowPlayingView.swift in Sources */,
 				21B9D38D7040D5B18DE0077C /* OfflineCacheService.swift in Sources */,
 				F1D32BED55078034ECE49FD2 /* OnboardingView.swift in Sources */,
+				56DF4E98B84BA85BCE85DEFB /* PlaybackLogger.swift in Sources */,
 				39FFD3BC78B15EE11EC92FF8 /* PlaybackService.swift in Sources */,
 				105026E1F08537C5A4E8ED00 /* PlayerState.swift in Sources */,
 				BDFA3114357E0272F8E38E6F /* PlayerViewModel.swift in Sources */,
@@ -633,6 +998,14 @@
 				F97793A8B1968E83038B5A79 /* Track.swift in Sources */,
 				CE9551C97BE2EFE4137EFCB6 /* VibeView.swift in Sources */,
 				773477F014E0B5057D46908B /* WatchConnectivityService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		497EDAFFEA69EF94704170F0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				497CD685AC340E8D34B2BF20 /* ScreenshotTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -664,9 +1037,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F729B5F30D2AA840813BE2EB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4ED87F5D9531C31EB0CD361F /* KenopsiaWatchScreenshots.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		10BB6336D1D96FCFAF5D35C1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8E7F0BF35C771CD745C6FF17 /* KenopsiaWatch */;
+			targetProxy = 8A9B19031A30AED30FF45F7E /* PBXContainerItemProxy */;
+		};
 		63AE6589726EDD9F32FC416F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = CA983D0868E5F4B9E61A5175 /* KenopsiaWidget */;
@@ -681,6 +1067,11 @@
 			isa = PBXTargetDependency;
 			target = C139513D39CCCB27D6FA273D /* Kenopsia */;
 			targetProxy = D50EE006215283880EDB5C00 /* PBXContainerItemProxy */;
+		};
+		9E36A6A38D67079E8CD4AD70 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C139513D39CCCB27D6FA273D /* Kenopsia */;
+			targetProxy = BDE344A24712CCA4F02122CC /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -700,6 +1091,45 @@
 			};
 			name = Release;
 		};
+		0FAD21690321C5F446CEC587 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.mohome.kenopsia.screenshots;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.1;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Kenopsia;
+			};
+			name = Debug;
+		};
+		0FEF5CD881BD63A995EA2FF2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.mohome.kenopsia.watchscreenshots;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.1;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = KenopsiaWatch;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
 		1A9DBEAA8629E39A3B363212 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -707,6 +1137,10 @@
 				CODE_SIGN_ENTITLEMENTS = Kenopsia/Kenopsia.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				ENABLE_DEBUG_DYLIB = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Frameworks\"",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Kenopsia/Info.plist;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
@@ -714,6 +1148,10 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"-ObjC",
+					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = net.mohome.kenopsia;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = maccatalyst.net.mohome.kenopsia;
@@ -778,6 +1216,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = KTX2SJ3P98;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -846,6 +1285,26 @@
 			};
 			name = Release;
 		};
+		7771567D7E47CB990D851E4B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.mohome.kenopsia.watchscreenshots;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.1;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = KenopsiaWatch;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 		8EAD7398DBDE3B9CD8059B04 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -872,6 +1331,10 @@
 				CODE_SIGN_ENTITLEMENTS = Kenopsia/Kenopsia.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				ENABLE_DEBUG_DYLIB = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Frameworks\"",
+				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Kenopsia/Info.plist;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
@@ -880,6 +1343,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"-ObjC",
+					"-lc++",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = net.mohome.kenopsia;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = maccatalyst.net.mohome.kenopsia;
 				SDKROOT = iphoneos;
@@ -887,6 +1354,25 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		D9D1005CDE0081BF5C5B6BE4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.mohome.kenopsia.screenshots;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.1;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Kenopsia;
+			};
+			name = Release;
 		};
 		E2A3B547DED49089E702BFF4 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -945,6 +1431,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = KTX2SJ3P98;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -982,6 +1469,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		4026C27AB5FE3C18F6351D12 /* Build configuration list for PBXNativeTarget "KenopsiaScreenshots" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0FAD21690321C5F446CEC587 /* Debug */,
+				D9D1005CDE0081BF5C5B6BE4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		4C7CA3622861601D1FB4090E /* Build configuration list for PBXNativeTarget "KenopsiaTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1014,6 +1510,15 @@
 			buildConfigurations = (
 				2B9809DB1B211F8999ED2DF1 /* Debug */,
 				E54636603B65E73310623505 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F3BC4F4F534C9F41F1AC05E2 /* Build configuration list for PBXNativeTarget "KenopsiaWatchScreenshots" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0FEF5CD881BD63A995EA2FF2 /* Debug */,
+				7771567D7E47CB990D851E4B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

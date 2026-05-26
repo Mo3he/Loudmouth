@@ -12,8 +12,25 @@ struct LibraryVibe: Identifiable {
 
     func generate(from tracks: [Track]) -> [Track] {
         var matched = tracks.filter { matcher($0) }.shuffled()
+        // If fewer than 10 matches, try tracks with missing genres but matching
+        // BPM/duration heuristics rather than purely random padding.
         if matched.count < 10 {
-            matched += tracks.filter { !matcher($0) }.shuffled()
+            let remaining = tracks.filter { !matcher($0) }
+            let heuristicFill: [Track]
+            switch id {
+            case "chill", "late_night":
+                // Slow tracks (BPM < 100 or duration > 4 min) are likely mellow
+                heuristicFill = remaining.filter { ($0.bpm ?? 999) < 100 || $0.durationSeconds > 240 }
+            case "energy", "party":
+                // Fast tracks (BPM > 120 or short/punchy < 4 min)
+                heuristicFill = remaining.filter { ($0.bpm ?? 0) > 120 || ($0.durationSeconds < 240 && $0.durationSeconds > 60) }
+            case "focus":
+                // Long tracks without vocals hint (instrumental heuristic: genre empty or very long)
+                heuristicFill = remaining.filter { $0.durationSeconds > 180 && $0.genre.isEmpty }
+            default:
+                heuristicFill = remaining
+            }
+            matched += heuristicFill.shuffled()
         }
         return Array(matched.prefix(limit))
     }
@@ -145,6 +162,8 @@ struct VibeView: View {
     @EnvironmentObject var library: LibraryViewModel
     @EnvironmentObject var player: PlayerViewModel
     @Environment(\.kAccent) var accent
+    @Environment(\.sidebarToggle) private var sidebarToggle
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var activeVibeID: String?
     @State private var generatedTracks: [Track] = []
     @State private var showingPlaylist = false
@@ -152,11 +171,18 @@ struct VibeView: View {
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.kBackground.ignoresSafeArea()
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 20) {
+        let content = ZStack {
+            Color.kBackground.ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 6) {
+                        if let sidebarToggle {
+                            Button(action: sidebarToggle) {
+                                Image(systemName: "sidebar.left")
+                                    .font(.system(size: 15, weight: .bold))
+                            }
+                            .padding(.trailing, 4)
+                        }
                         VStack(alignment: .leading, spacing: 4) {
                             Text("VIBE")
                                 .font(.system(size: 12, weight: .bold))
@@ -166,20 +192,30 @@ struct VibeView: View {
                                 .font(.system(size: 13))
                                 .foregroundStyle(.primary.opacity(0.38))
                         }
-                        .padding(.top, 8)
+                    }
+                    .padding(.top, 8)
 
-                        LazyVGrid(columns: columns, spacing: 12) {
-                            ForEach(LibraryVibe.all) { vibe in
-                                VibeCard(vibe: vibe, isActive: activeVibeID == vibe.id)
-                                    .onTapGesture { selectVibe(vibe) }
-                            }
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(LibraryVibe.all) { vibe in
+                            VibeCard(vibe: vibe, isActive: activeVibeID == vibe.id)
+                                .onTapGesture { selectVibe(vibe) }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, player.state.status != .stopped ? 80 : 24)
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, player.state.status != .stopped ? 80 : 24)
             }
-            .toolbar(.hidden, for: .navigationBar)
+        }
+
+        return Group {
+            if horizontalSizeClass == .compact {
+                NavigationStack {
+                    content
+                        .toolbar(.hidden, for: .navigationBar)
+                }
+            } else {
+                content
+            }
         }
         .tint(accent)
         .sheet(isPresented: $showingPlaylist) {

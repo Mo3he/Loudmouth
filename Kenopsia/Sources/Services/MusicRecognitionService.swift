@@ -73,25 +73,59 @@ actor MusicRecognitionService {
 
     private func generateSignature(from url: URL) throws -> SHSignature {
         let audioFile = try AVAudioFile(forReading: url)
-        let format    = audioFile.processingFormat
-        let generator = SHSignatureGenerator()
+        let inFormat  = audioFile.processingFormat
 
-        // Read up to 30 s — Shazam typically needs 5–12 s of audio.
-        let maxFrames   = Int(format.sampleRate * 30)
-        let totalFrames = min(Int(audioFile.length), maxFrames)
-        var framesRead  = 0
+        // Normalize to 44.1 kHz Float32 stereo before feeding ShazamKit.
+        // Appending the file's native format in chunks produces SHError 101
+        // (frame-position vs sample-time mismatch) on recent iOS releases when
+        // AVAudioFile.read returns slightly fewer frames than requested. A
+        // single, converted, well-formed buffer with `at: nil` sidesteps both
+        // 101 (discontinuity) and 201 (signature duration invalid).
+        guard let outFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 44_100,
+            channels: 2,
+            interleaved: false
+        ) else { throw RecognitionError.audioReadFailed }
 
-        while framesRead < totalFrames {
-            let toRead = AVAudioFrameCount(min(8192, totalFrames - framesRead))
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: toRead) else { break }
-            try audioFile.read(into: buffer, frameCount: toRead)
-            guard buffer.frameLength > 0 else { break }
-            let time = AVAudioTime(sampleTime: AVAudioFramePosition(framesRead),
-                                   atRate: format.sampleRate)
-            try generator.append(buffer, at: time)
-            framesRead += Int(buffer.frameLength)
+        guard let converter = AVAudioConverter(from: inFormat, to: outFormat) else {
+            throw RecognitionError.audioReadFailed
         }
-        return try generator.signature()
+
+        // 12 seconds of source audio — comfortably inside Shazam's accepted
+        // signature duration range (~3 s min, ~30 s max).
+        let inFramesWanted = AVAudioFrameCount(min(inFormat.sampleRate * 12,
+                                                   Double(audioFile.length)))
+        guard inFramesWanted > 0,
+              let inBuffer = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: inFramesWanted)
+        else { throw RecognitionError.audioReadFailed }
+        try audioFile.read(into: inBuffer, frameCount: inFramesWanted)
+        guard inBuffer.frameLength > 0 else { throw RecognitionError.audioReadFailed }
+
+        let rateRatio = outFormat.sampleRate / inFormat.sampleRate
+        let outCap = AVAudioFrameCount(Double(inBuffer.frameLength) * rateRatio) + 1024
+        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: outCap) else {
+            throw RecognitionError.audioReadFailed
+        }
+
+        // AVAudioConverter calls the input block synchronously on the calling
+        // thread, so the buffer never actually crosses an isolation boundary
+        // despite the @Sendable annotation on the closure.
+        nonisolated(unsafe) let inBufferCapture = inBuffer
+        var fed = false
+        var convError: NSError?
+        converter.convert(to: outBuffer, error: &convError) { _, status in
+            if fed { status.pointee = .endOfStream; return nil }
+            fed = true
+            status.pointee = .haveData
+            return inBufferCapture
+        }
+        if let convError { throw convError }
+        guard outBuffer.frameLength > 0 else { throw RecognitionError.audioReadFailed }
+
+        let generator = SHSignatureGenerator()
+        try generator.append(outBuffer, at: nil)
+        return generator.signature()
     }
 
     // MARK: - ShazamKit matching

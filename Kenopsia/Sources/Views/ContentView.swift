@@ -10,6 +10,32 @@ struct ContentView: View {
 
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("accentColorHex") private var accentColorHex = "00D9E6"
+    @State private var columnVisibility: NavigationSplitViewVisibility =
+        CommandLine.arguments.contains("--demo-mode") ? .all : .automatic
+    @State private var iPadSection: iPadSidebarSection = .library
+    @State private var iPadSectionSet: Set<iPadSidebarSection> = [.library]
+
+    private enum iPadSidebarSection: String, Hashable, CaseIterable {
+        case library, vibe, sources, settings
+
+        var title: String {
+            switch self {
+            case .library: return "Library"
+            case .vibe:    return "Vibe"
+            case .sources: return "Sources"
+            case .settings: return "Settings"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .library:  return "music.note.list"
+            case .vibe:     return "waveform.circle.fill"
+            case .sources:  return "externaldrive"
+            case .settings: return "gearshape"
+            }
+        }
+    }
 
     private var accentColor: Color { Color(hex: accentColorHex) ?? .kCyan }
 
@@ -80,16 +106,43 @@ struct ContentView: View {
 
     // MARK: - iPad split
     private var iPadLayout: some View {
-        NavigationSplitView {
-            SidebarView()
-                .environmentObject(search)
-        } content: {
-            NavigationStack {
-                LibraryView()
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            List(iPadSidebarSection.allCases, id: \.self, selection: $iPadSectionSet) { section in
+                Label(section.title, systemImage: section.icon)
             }
+            .navigationTitle("Kenopsia")
         } detail: {
-            NowPlayingView()
+            iPadDetailView
+        }
+        .environment(\.sidebarToggle, {
+            withAnimation { columnVisibility = columnVisibility == .all ? .detailOnly : .all }
+        })
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if player.state.status != .stopped {
+                Color.clear.frame(height: 78)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            MiniPlayerView()
                 .environmentObject(player)
+                .environment(\.colorScheme, .dark)
+                .environment(\.kAccent, accentColor)
+                .padding(.bottom, 20)
+        }
+        .tint(accentColor)
+    }
+
+    @ViewBuilder
+    private var iPadDetailView: some View {
+        switch iPadSectionSet.first ?? .library {
+        case .library:
+            NavigationStack { LibraryView() }
+        case .vibe:
+            VibeView()
+        case .sources:
+            SourcesView()
+        case .settings:
+            SettingsView()
         }
     }
 

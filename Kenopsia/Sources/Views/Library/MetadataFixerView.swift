@@ -14,48 +14,50 @@ struct MetadataFixerView: View {
     private let writer = TagWriter()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if isScanning {
-                    ProgressView("Scanning library…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if problems.isEmpty {
-                    ContentUnavailableView(
-                        "All Good",
-                        systemImage: "checkmark.seal.fill",
-                        description: Text("Every local track has artist and album tags.")
-                    )
-                } else {
-                    problemList
-                }
+        Group {
+            if isScanning {
+                ProgressView("Scanning library…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if problems.isEmpty {
+                ContentUnavailableView(
+                    "All Good",
+                    systemImage: "checkmark.seal.fill",
+                    description: Text("Every local track has artist and album tags.")
+                )
+            } else {
+                problemList
             }
-            .navigationTitle("Metadata Fixer")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Scan") { Task { await scan() } }
-                        .disabled(isScanning || isFixingAll)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fix All") { Task { await fixAll() } }
-                        .disabled(problems.isEmpty || isFixingAll)
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if isFixingAll {
-                    VStack(spacing: 8) {
-                        ProgressView(value: fixProgress)
-                        Text("Identifying… \(Int(fixProgress * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .padding()
-                }
-            }
-            .task { await scan() }
         }
+        .navigationTitle("Metadata Fixer")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Fix All") { Task { await fixAll() } }
+                    .disabled(problems.isEmpty || isFixingAll)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await scan() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isScanning || isFixingAll)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if isFixingAll {
+                VStack(spacing: 8) {
+                    ProgressView(value: fixProgress)
+                    Text("Identifying… \(Int(fixProgress * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding()
+            }
+        }
+        .task { await scan() }
     }
 
     // MARK: - Problem list
@@ -80,7 +82,13 @@ struct MetadataFixerView: View {
         let allTracks = Array(LibraryStore.shared.tracks.values)
         problems = allTracks.filter { track in
             guard case .localFile = track.uri else { return false }
-            return track.artist.isEmpty || track.album.isEmpty
+            // Flag any track missing artist, album, genre, or year. Title is
+            // intentionally not required since it can be derived from the
+            // filename and many lossy rips skip it without being "broken".
+            return track.artist.isEmpty
+                || track.album.isEmpty
+                || track.genre.isEmpty
+                || track.year == nil
         }.map { MetadataProblem(track: $0) }
         isScanning = false
     }
@@ -134,6 +142,21 @@ struct MetadataFixerView: View {
     // MARK: - Apply metadata
 
     private func apply(meta: MusicRecognitionService.RecognizedMetadata, to track: Track) async {
+        await MetadataApplier.apply(meta: meta, to: track, library: library, writer: writer)
+    }
+}
+
+// MARK: - MetadataApplier
+/// Shared helper that fills missing tag fields from a RecognizedMetadata, writes
+/// them back to the audio file, and updates the library. Used by both the
+/// settings-level Metadata Fixer and the per-album identify flow.
+enum MetadataApplier {
+    static func apply(
+        meta: MusicRecognitionService.RecognizedMetadata,
+        to track: Track,
+        library: LibraryViewModel,
+        writer: TagWriter
+    ) async {
         var updated = track
         if let v = meta.title,  !v.isEmpty, updated.title.isEmpty  { updated.title  = v }
         if let v = meta.artist, !v.isEmpty, updated.artist.isEmpty  { updated.artist = v; updated.albumArtist = v }
@@ -164,7 +187,8 @@ struct MetadataFixerView: View {
             _ = try? await writer.write(tags: tags, to: URL(fileURLWithPath: path))
         }
 
-        await MainActor.run { library.update(track: updated) }
+        let finalTrack = updated
+        await MainActor.run { library.update(track: finalTrack) }
     }
 }
 

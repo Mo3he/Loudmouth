@@ -68,6 +68,22 @@ actor ArtworkFetchService {
             ?? ""
     }
 
+    /// Fetch album artwork by artist + album when the caller doesn't have a
+    /// Track in hand (e.g. the library album grid cells). Idempotent and
+    /// deduplicated via the inFlight set, so calling it for every visible cell
+    /// on first appearance is safe.
+    @discardableResult
+    func fetchAlbumArtIfNeeded(artist: String, album: String) async -> String? {
+        let key = Self.generateCacheKey(artist: artist, album: album)
+        guard !key.isEmpty else { return nil }
+        guard !cache.hasArtwork(forKey: key) else { return key }
+        guard !inFlight.contains(key)        else { return key }
+        inFlight.insert(key)
+        defer { inFlight.remove(key) }
+        await fetch(artist: artist, album: album, cacheKey: key)
+        return cache.hasArtwork(forKey: key) ? key : nil
+    }
+
     /// Fetch artwork for an album. Used by the bulk fixer and album detail view.
     func fetch(artist: String, album: String, cacheKey: String) async {
         // 1. MusicBrainz + Cover Art Archive
@@ -186,6 +202,92 @@ actor ArtworkFetchService {
             return nil
         }
     }
+
+    // MARK: - Artist photos
+
+    /// Stable cache key for artist photos — kept separate from album art keys.
+    static func generateArtistPhotoKey(name: String) -> String {
+        let k = "artist_photo:\(name.lowercased())"
+        return k.data(using: .utf8)
+            .map { Data($0).base64EncodedString() }
+            ?? ""
+    }
+
+    /// Fetch an artist photo if not already cached. Tries TheAudioDB first,
+    /// falls back to Last.fm when TheAudioDB has no result or its demo API key
+    /// is rate-limited / disabled. Fire-and-forget safe.
+    @discardableResult
+    func fetchArtistPhotoIfNeeded(name: String) async -> String? {
+        let key = Self.generateArtistPhotoKey(name: name)
+        guard !key.isEmpty else { return nil }
+        guard !cache.hasArtwork(forKey: key) else { return key }
+        guard !inFlight.contains(key)        else { return key }
+        inFlight.insert(key)
+        defer { inFlight.remove(key) }
+        if let data = await fetchArtistPhotoFromAudioDB(name: name) {
+            cache.store(imageData: data, forKey: key)
+            return key
+        }
+        if let data = await fetchArtistPhotoFromLastFm(name: name) {
+            cache.store(imageData: data, forKey: key)
+            return key
+        }
+        return nil
+    }
+
+    /// Free public endpoint (API key "2" is TheAudioDB's demo key — shared with
+    /// every tutorial app, rate-limited and may stop working without notice).
+    /// Returns the artist thumb — typically a square press/promo photo.
+    private func fetchArtistPhotoFromAudioDB(name: String) async -> Data? {
+        let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        guard let url = URL(string: "https://www.theaudiodb.com/api/v1/json/2/search.php?s=\(encoded)") else { return nil }
+        do {
+            let (data, response) = try await session.data(from: url)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            let result = try JSONDecoder().decode(AudioDBArtistResult.self, from: data)
+            guard let thumbString = result.artists?.first?.strArtistThumb,
+                  !thumbString.isEmpty,
+                  let thumbURL = URL(string: thumbString) else { return nil }
+            let (imageData, _) = try await session.data(from: thumbURL)
+            return imageData
+        } catch {
+            return nil
+        }
+    }
+
+    /// Last.fm artist.getInfo fallback. Requires the same `lastFmAPIKey` that
+    /// album-art lookups already use. Last.fm's `image` field still serves
+    /// historical artist photos for established artists; for newer artists the
+    /// images are often the "star" placeholder and we drop those.
+    private func fetchArtistPhotoFromLastFm(name: String) async -> Data? {
+        guard let apiKey = UserDefaults.standard.string(forKey: "lastFmAPIKey"),
+              !apiKey.isEmpty else { return nil }
+        var comps = URLComponents(url: lastfmURL, resolvingAgainstBaseURL: true)!
+        comps.queryItems = [
+            URLQueryItem(name: "method",  value: "artist.getinfo"),
+            URLQueryItem(name: "artist",  value: name),
+            URLQueryItem(name: "api_key", value: apiKey),
+            URLQueryItem(name: "format",  value: "json")
+        ]
+        guard let url = comps.url else { return nil }
+        do {
+            let (data, response) = try await session.data(from: url)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            let result = try JSONDecoder().decode(LastFmArtistResult.self, from: data)
+            let urlString = result.artist.image
+                .last(where: { $0.size == "mega" || $0.size == "extralarge" })?
+                .text
+            guard let urlString,
+                  !urlString.isEmpty,
+                  // Last.fm returns a star-shaped placeholder when no photo exists.
+                  !urlString.contains("2a96cbd8b46e442fc41c2b86b821562f"),
+                  let imageURL = URL(string: urlString) else { return nil }
+            let (imageData, _) = try await session.data(from: imageURL)
+            return imageData
+        } catch {
+            return nil
+        }
+    }
 }
 
 // MARK: - MusicBrainz response models
@@ -217,7 +319,26 @@ private struct LastFmAlbumResult: Decodable {
     }
 }
 
-// MARK: - Lucene escape helper
+// MARK: - TheAudioDB response models
+private struct AudioDBArtistResult: Decodable {
+    let artists: [AudioDBArtist]?
+    struct AudioDBArtist: Decodable {
+        let strArtistThumb: String?
+    }
+}
+
+// MARK: - Last.fm artist response model
+private struct LastFmArtistResult: Decodable {
+    let artist: LastFmArtist
+    struct LastFmArtist: Decodable {
+        let image: [LastFmImage]
+    }
+    struct LastFmImage: Decodable {
+        let text: String
+        let size: String
+        enum CodingKeys: String, CodingKey { case text = "#text"; case size }
+    }
+}
 private extension String {
     /// Escapes special Lucene query characters for MusicBrainz search.
     var escapedForLucene: String {

@@ -25,6 +25,26 @@ targets:
       - path: Kenopsia/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Kenopsia/Resources/Assets.xcassets
+      # Demo assets (audio + artwork) - only present after running scripts/setup_demo_assets.sh
+      - path: Kenopsia/DemoAssets
+        optional: true
+        buildPhase: resources
+      # GoogleCast static xcframework resource bundles — must be copied to the app
+      # bundle explicitly (static frameworks don't embed resources automatically).
+      - path: Frameworks/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleCastCoreResources.bundle
+        buildPhase: resources
+      - path: Frameworks/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleCastUIResources.bundle
+        buildPhase: resources
+      - path: Frameworks/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleCastOptionalUIResources.bundle
+        buildPhase: resources
+      - path: Frameworks/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleSansRegular.bundle
+        buildPhase: resources
+      - path: Frameworks/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleSansMedium.bundle
+        buildPhase: resources
+      - path: Frameworks/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleSansBold.bundle
+        buildPhase: resources
+      - path: Frameworks/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/MaterialDialogs.bundle
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mohome.kenopsia
@@ -36,6 +56,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: "YES"
         INFOPLIST_KEY_UIBackgroundModes: audio
+        # Required for the static GoogleCast.xcframework
+        OTHER_LDFLAGS: "-ObjC -lc++"
     linkedFrameworks:
     entitlements:
       path: Kenopsia/Kenopsia.entitlements
@@ -52,6 +74,12 @@ targets:
         embed: true
       - target: KenopsiaWatch
         embed: true
+      # Google Cast iOS SDK 4.8.4 (static build - no Protobuf dependency).
+      # xcframework lives in Frameworks/ in this repo.
+      - framework: Frameworks/GoogleCast.xcframework
+        embed: false
+      # Required by GoogleCast static xcframework
+      - sdk: SystemConfiguration.framework
 
   KenopsiaWidget:
     type: app-extension
@@ -107,6 +135,35 @@ targets:
     dependencies:
       - target: Kenopsia
 
+  KenopsiaScreenshots:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: KenopsiaScreenshots
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.mohome.kenopsia.screenshots
+        SWIFT_VERSION: 5.10
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: "YES"
+    dependencies:
+      - target: Kenopsia
+
+  KenopsiaWatchScreenshots:
+    type: bundle.ui-testing
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: KenopsiaWatchScreenshots
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.mohome.kenopsia.watchscreenshots
+        SWIFT_VERSION: 5.10
+        GENERATE_INFOPLIST_FILE: "YES"
+    dependencies:
+      - target: KenopsiaWatch
+
 schemes:
   Kenopsia:
     build:
@@ -145,3 +202,35 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  KenopsiaScreenshots:
+    build:
+      targets:
+        Kenopsia: all
+        KenopsiaScreenshots: [test]
+    test:
+      config: Debug
+      targets:
+        - KenopsiaScreenshots
+
+  KenopsiaWatchApp:
+    build:
+      targets:
+        KenopsiaWatch: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  KenopsiaWatchScreenshots:
+    build:
+      targets:
+        KenopsiaWatch: all
+        KenopsiaWatchScreenshots: [test]
+    test:
+      config: Debug
+      targets:
+        - KenopsiaWatchScreenshots
+      disableMainThreadChecker: true
+    analyze:
+      config: Debug

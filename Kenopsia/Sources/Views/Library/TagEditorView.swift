@@ -16,6 +16,7 @@ struct TagEditorView: View {
     @State private var pendingArtworkData: Data?
     @State private var isIdentifying = false
     @State private var identifyError: String?
+    @State private var identifyMessage: String?
 
     private let writer = TagWriter()
 
@@ -73,6 +74,9 @@ struct TagEditorView: View {
                         if let err = identifyError {
                             Text(err).font(.caption).foregroundStyle(.red)
                         }
+                        if let msg = identifyMessage {
+                            Text(msg).font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -114,7 +118,8 @@ struct TagEditorView: View {
                 if let data = pendingArtworkData, let img = UIImage(data: data) {
                     Image(uiImage: img)
                         .resizable().scaledToFill()
-                } else if let key = track.artworkCacheKey,
+                } else if !tags.removeArtwork,
+                          let key = track.artworkCacheKey,
                           let img = ArtworkCache.shared.gridImage(forKey: key) {
                     Image(uiImage: img)
                         .resizable().scaledToFill()
@@ -136,6 +141,7 @@ struct TagEditorView: View {
                 Button(role: .destructive) {
                     pendingArtworkData = nil
                     tags.artworkData = nil
+                    tags.removeArtwork = true
                 } label: {
                     Label("Remove", systemImage: "trash")
                 }
@@ -156,6 +162,8 @@ struct TagEditorView: View {
         let url = URL(fileURLWithPath: path)
         var finalTags = tags
         finalTags.artworkData = pendingArtworkData ?? tags.artworkData
+        // If removeArtwork was requested but new artwork was then picked, cancel the removal.
+        if pendingArtworkData != nil { finalTags.removeArtwork = false }
 
         Task {
             do {
@@ -172,6 +180,10 @@ struct TagEditorView: View {
                 updated.discNumber  = finalTags.discNumber  ?? track.discNumber
                 updated.composer    = finalTags.composer    ?? track.composer
                 updated.comment     = finalTags.comment     ?? track.comment
+                if finalTags.removeArtwork, let key = updated.artworkCacheKey {
+                    ArtworkCache.shared.remove(forKey: key)
+                    updated.artworkCacheKey = nil
+                }
                 await MainActor.run {
                     library.update(track: updated)
                     isSaving = false
@@ -195,20 +207,44 @@ struct TagEditorView: View {
         guard case .localFile(let path) = track.uri else { return }
         isIdentifying = true
         identifyError = nil
+        identifyMessage = nil
         Task {
             do {
                 let meta = try await MusicRecognitionService.shared.recognize(
                     localURL: URL(fileURLWithPath: path)
                 )
-                // Fill only empty / nil fields so existing tags are not overwritten.
-                if let v = meta.title,  !v.isEmpty, (tags.title  ?? "").isEmpty { tags.title  = v }
+                // Fill only empty / nil fields so existing tags are not overwritten,
+                // and tally what we changed so the user gets visible feedback even
+                // when every field was already populated.
+                var filled: [String] = []
+                if let v = meta.title,  !v.isEmpty, (tags.title  ?? "").isEmpty {
+                    tags.title = v; filled.append("title")
+                }
                 if let v = meta.artist, !v.isEmpty, (tags.artist ?? "").isEmpty {
-                    tags.artist      = v
+                    tags.artist = v; filled.append("artist")
                     if (tags.albumArtist ?? "").isEmpty { tags.albumArtist = v }
                 }
-                if let v = meta.album,  !v.isEmpty, (tags.album  ?? "").isEmpty { tags.album  = v }
-                if let v = meta.genre,  !v.isEmpty, (tags.genre  ?? "").isEmpty { tags.genre  = v }
-                if let v = meta.year,   tags.year == nil                         { tags.year   = v }
+                if let v = meta.album,  !v.isEmpty, (tags.album  ?? "").isEmpty {
+                    tags.album = v; filled.append("album")
+                }
+                if let v = meta.genre,  !v.isEmpty, (tags.genre  ?? "").isEmpty {
+                    tags.genre = v; filled.append("genre")
+                }
+                if let v = meta.year, tags.year == nil {
+                    tags.year = v; filled.append("year")
+                }
+
+                let identifiedAs = [meta.artist, meta.title]
+                    .compactMap { $0?.isEmpty == false ? $0 : nil }
+                    .joined(separator: " – ")
+                if filled.isEmpty {
+                    identifyMessage = identifiedAs.isEmpty
+                        ? "Identified — no new fields to fill."
+                        : "Identified as \(identifiedAs). All fields already match."
+                } else {
+                    let prefix = identifiedAs.isEmpty ? "" : "\(identifiedAs) — "
+                    identifyMessage = "\(prefix)filled \(filled.joined(separator: ", "))."
+                }
             } catch {
                 identifyError = error.localizedDescription
             }

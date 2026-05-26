@@ -196,7 +196,7 @@ struct SourceDetailView: View {
         .fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
             guard case .success(let urls) = result, let url = urls.first else { return }
             _ = url.startAccessingSecurityScopedResource()
-            if let bookmark = try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) {
+            if let bookmark = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
                 source.config = .local(LocalSourceConfig(bookmarkData: bookmark))
                 sources.update(source: source)
             }
@@ -240,16 +240,31 @@ struct SourceDetailView: View {
                     }
                 }
             }
-        case .nas:
-            Section("Connection") {
-                TextField("192.168.1.100 or hostname (leave blank to auto-discover)", text: nasHostBinding)
-                    .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
-                HStack {
-                    Text("Port"); Spacer()
-                    TextField("8200", value: nasPortBinding, format: .number)
-                        .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+        case .nas(let cfg):
+            Section("Protocol") {
+                Picker("Protocol", selection: nasProtocolBinding) {
+                    Text("DLNA / UPnP").tag(NASSourceConfig.NASProtocol.dlna)
+                    Text("SMB / Network Drive").tag(NASSourceConfig.NASProtocol.smb)
                 }
-                Text("Protocol: DLNA / UPnP").foregroundStyle(.secondary)
+                .pickerStyle(.segmented)
+            }
+            if cfg.protocol_ == .dlna {
+                Section("Connection") {
+                    TextField("192.168.1.100 or hostname (leave blank to auto-discover)", text: nasHostBinding)
+                        .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
+                    HStack {
+                        Text("Port"); Spacer()
+                        TextField("8200", value: nasPortBinding, format: .number)
+                            .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                    }
+                }
+                Section {
+                    NASFolderPickerSection(source: $source)
+                }
+            } else {
+                Section("Music Folder") {
+                    SMBFolderPickerSection(source: $source)
+                }
             }
         case .webRadio(let cfg):
             Section("Stations (\(cfg.stations.count))") {
@@ -338,6 +353,12 @@ struct SourceDetailView: View {
             set: { v in guard case .nas(var c) = source.config else { return }; c.port = v; source.config = .nas(c) }
         )
     }
+    private var nasProtocolBinding: Binding<NASSourceConfig.NASProtocol> {
+        Binding(
+            get: { guard case .nas(let c) = source.config else { return .dlna }; return c.protocol_ },
+            set: { v in guard case .nas(var c) = source.config else { return }; c.protocol_ = v; source.config = .nas(c) }
+        )
+    }
 }
 
 // MARK: - AddRadioStationView
@@ -383,10 +404,97 @@ struct AddRadioStationView: View {
     }
 }
 
+// MARK: - FolderPickerStore
+/// Shared state for folder picking, lifted to AddSourceView so it can be
+/// injected down to AddSourceConfigView via EnvironmentObject.
+@MainActor
+private final class FolderPickerStore: ObservableObject {
+    @Published var showingLocal = false
+    @Published var showingSMB = false
+    @Published var localBookmark: Data? = nil
+    @Published var localFolderName = ""
+    @Published var nasBookmark: Data? = nil
+    @Published var nasFolderName = ""
+}
+
+// MARK: - FolderPickerBridge
+/// UIKit bridge that presents UIDocumentPickerViewController from the topmost
+/// view controller. SwiftUI's .fileImporter silently fails when nested inside
+/// a NavigationStack inside a sheet — this bypasses that entirely.
+private struct FolderPickerBridge: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let onPick: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    func makeUIViewController(context: Context) -> UIViewController { UIViewController() }
+
+    func updateUIViewController(_ vc: UIViewController, context: Context) {
+        guard isPresented, context.coordinator.picker == nil else { return }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+        picker.allowsMultipleSelection = false
+        picker.delegate = context.coordinator
+        context.coordinator.picker = picker
+        // Present from the topmost UIKit VC to avoid SwiftUI sheet restrictions.
+        let topVC = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?
+            .rootViewController?
+            .topmostPresented
+        topVC?.present(picker, animated: true)
+    }
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        var parent: FolderPickerBridge
+        var picker: UIDocumentPickerViewController?
+        init(parent: FolderPickerBridge) { self.parent = parent }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            picker = nil
+            parent.isPresented = false
+            guard let url = urls.first else { return }
+            _ = url.startAccessingSecurityScopedResource()
+            parent.onPick(url)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            picker = nil
+            parent.isPresented = false
+        }
+    }
+}
+
+private extension UIViewController {
+    var topmostPresented: UIViewController {
+        presentedViewController?.topmostPresented ?? self
+    }
+}
+
 // MARK: - AddSourceView  (step 1 wrapper)
 struct AddSourceView: View {
+    @StateObject private var pickerStore = FolderPickerStore()
+
     var body: some View {
         NavigationStack { SourceTypePickerView() }
+            .environmentObject(pickerStore)
+            .background(
+                Group {
+                    FolderPickerBridge(isPresented: $pickerStore.showingLocal) { url in
+                        pickerStore.localFolderName = url.lastPathComponent
+                        pickerStore.localBookmark = try? url.bookmarkData(
+                            options: [], includingResourceValuesForKeys: nil, relativeTo: nil
+                        )
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                    FolderPickerBridge(isPresented: $pickerStore.showingSMB) { url in
+                        pickerStore.nasFolderName = url.lastPathComponent
+                        pickerStore.nasBookmark = try? url.bookmarkData(
+                            options: [], includingResourceValuesForKeys: nil, relativeTo: nil
+                        )
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+            )
     }
 }
 
@@ -447,10 +555,9 @@ struct AddSourceConfigView: View {
 
     @State private var displayName = ""
 
+    @EnvironmentObject private var pickerStore: FolderPickerStore
+
     // Local
-    @State private var showingFolderPicker = false
-    @State private var localBookmark: Data?
-    @State private var localFolderName = ""
     @State private var watchForChanges = true
 
     // Subsonic
@@ -464,6 +571,7 @@ struct AddSourceConfigView: View {
     @State private var nasProtocol: NASSourceConfig.NASProtocol = .dlna
     @State private var nasDiscoveredServers: [URL] = []
     @State private var isDiscovering = false
+
 
     // Cloud
     @State private var cloudProvider: CloudProvider = .iCloud
@@ -480,7 +588,7 @@ struct AddSourceConfigView: View {
                 TextField(kind.defaultDisplayName, text: $displayName)
             }
             configFields
-            if kind == .subsonic || kind == .nas {
+            if kind == .subsonic || (kind == .nas && nasProtocol == .dlna) {
                 testConnectionSection
             }
             Section {
@@ -496,19 +604,6 @@ struct AddSourceConfigView: View {
         }
         .navigationTitle("Configure")
         .navigationBarTitleDisplayMode(.inline)
-        .fileImporter(
-            isPresented: $showingFolderPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            guard case .success(let urls) = result, let url = urls.first else { return }
-            _ = url.startAccessingSecurityScopedResource()
-            localFolderName = url.lastPathComponent
-            localBookmark = try? url.bookmarkData(
-                options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil
-            )
-            url.stopAccessingSecurityScopedResource()
-        }
     }
 
     @ViewBuilder
@@ -516,12 +611,12 @@ struct AddSourceConfigView: View {
         switch kind {
         case .local:
             Section("Folder") {
-                if localBookmark != nil {
-                    Label(localFolderName.isEmpty ? "Folder selected" : localFolderName,
+                if pickerStore.localBookmark != nil {
+                    Label(pickerStore.localFolderName.isEmpty ? "Folder selected" : pickerStore.localFolderName,
                           systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                 }
-                Button(localBookmark == nil ? "Choose Folder" : "Change Folder") {
-                    showingFolderPicker = true
+                Button(pickerStore.localBookmark == nil ? "Choose Folder" : "Change Folder") {
+                    pickerStore.showingLocal = true
                 }
                 Toggle("Watch for Changes", isOn: $watchForChanges)
             }
@@ -539,52 +634,75 @@ struct AddSourceConfigView: View {
             }
 
         case .nas:
-            Section("Connection") {
-                TextField("192.168.1.100 or hostname (optional)", text: $nasHost)
-                    .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
-                    .onChange(of: nasHost) { _, _ in connectionStatus = .idle }
-                HStack {
-                    Text("Port"); Spacer()
-                    TextField("8200", value: $nasPort, format: .number)
-                        .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+            Section("Protocol") {
+                Picker("Protocol", selection: $nasProtocol) {
+                    Text("DLNA / UPnP").tag(NASSourceConfig.NASProtocol.dlna)
+                    Text("SMB / Network Drive").tag(NASSourceConfig.NASProtocol.smb)
                 }
-                Text("Protocol: DLNA / UPnP").foregroundStyle(.secondary)
+                .pickerStyle(.segmented)
             }
-            Section {
-                Button {
-                    isDiscovering = true
-                    nasDiscoveredServers = []
-                    Task {
-                        let browser = DLNABrowser()
-                        nasDiscoveredServers = await browser.discoverServers(timeout: 5)
-                        isDiscovering = false
-                    }
-                } label: {
-                    if isDiscovering {
-                        HStack { ProgressView(); Text("Scanning network\u{2026}").foregroundStyle(.secondary) }
-                    } else {
-                        Label("Scan Network", systemImage: "network")
+            if nasProtocol == .dlna {
+                Section("Connection") {
+                    TextField("192.168.1.100 or hostname (optional)", text: $nasHost)
+                        .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
+                        .onChange(of: nasHost) { _, _ in connectionStatus = .idle }
+                    HStack {
+                        Text("Port"); Spacer()
+                        TextField("8200", value: $nasPort, format: .number)
+                            .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                     }
                 }
-                .disabled(isDiscovering)
-                ForEach(nasDiscoveredServers, id: \.absoluteString) { url in
+                Section {
                     Button {
-                        nasHost = url.host ?? ""
-                        nasPort = url.port ?? 8200
-                        connectionStatus = .idle
+                        isDiscovering = true
+                        nasDiscoveredServers = []
+                        Task {
+                            let browser = DLNABrowser()
+                            nasDiscoveredServers = await browser.discoverServers(timeout: 5)
+                            isDiscovering = false
+                        }
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(url.host ?? url.absoluteString).font(.subheadline)
-                            Text(url.absoluteString).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        if isDiscovering {
+                            HStack { ProgressView(); Text("Scanning network\u{2026}").foregroundStyle(.secondary) }
+                        } else {
+                            Label("Scan Network", systemImage: "network")
                         }
                     }
-                    .foregroundStyle(.primary)
+                    .disabled(isDiscovering)
+                    ForEach(nasDiscoveredServers, id: \.absoluteString) { url in
+                        Button {
+                            nasHost = url.host ?? ""
+                            nasPort = url.port ?? 8200
+                            connectionStatus = .idle
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(url.host ?? url.absoluteString).font(.subheadline)
+                                Text(url.absoluteString).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                } header: {
+                    Text("Auto-Discover")
+                } footer: {
+                    Text("Tap a discovered server to fill in its address, or type it manually above.")
+                        .font(.caption)
                 }
-            } header: {
-                Text("Auto-Discover")
-            } footer: {
-                Text("Tap a discovered server to fill in its address, or type it manually above.")
-                    .font(.caption)
+            } else {
+                Section {
+                    if pickerStore.nasBookmark != nil {
+                        Label(pickerStore.nasFolderName.isEmpty ? "Folder selected" : pickerStore.nasFolderName,
+                              systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    }
+                    Button(pickerStore.nasBookmark == nil ? "Choose Folder" : "Change Folder") {
+                        pickerStore.showingSMB = true
+                    }
+                } header: {
+                    Text("Music Folder")
+                } footer: {
+                    Text("First connect to your NAS in the Files app (tap \u{2026} > Connect to Server, enter smb://address), then choose the music folder here.")
+                        .font(.caption)
+                }
             }
 
         case .webRadio:
@@ -666,9 +784,13 @@ struct AddSourceConfigView: View {
 
     private var isValid: Bool {
         switch kind {
-        case .local:        return localBookmark != nil
+        case .local:        return pickerStore.localBookmark != nil
         case .subsonic:     return !subURL.isEmpty && !subUsername.isEmpty && !subPassword.isEmpty
-        case .nas:          return true   // host is optional — SSDP discovers if left empty
+        case .nas:
+            switch nasProtocol {
+            case .dlna: return true   // host is optional — SSDP discovers if left empty
+            case .smb:  return pickerStore.nasBookmark != nil
+            }
         case .webRadio, .wifiTransfer, .appleMusic: return true
         case .cloud:
             switch cloudProvider {
@@ -683,7 +805,7 @@ struct AddSourceConfigView: View {
         let config: MusicSourceConfig
         switch kind {
         case .local:
-            config = .local(LocalSourceConfig(bookmarkData: localBookmark, watchForChanges: watchForChanges))
+            config = .local(LocalSourceConfig(bookmarkData: pickerStore.localBookmark, watchForChanges: watchForChanges))
         case .subsonic:
             let key = "sub_\(UUID().uuidString)"
             try? KeychainHelper.shared.save(key: key, value: subPassword)
@@ -693,7 +815,15 @@ struct AddSourceConfigView: View {
                 keychainKey: key
             ))
         case .nas:
-            config = .nas(NASSourceConfig(host: nasHost, port: nasPort, protocol_: nasProtocol))
+            var nasCfg = NASSourceConfig()
+            nasCfg.host = nasHost
+            nasCfg.port = nasPort
+            nasCfg.protocol_ = nasProtocol
+            if nasProtocol == .smb {
+                nasCfg.smbBookmarkData = pickerStore.nasBookmark
+                nasCfg.smbFolderName = pickerStore.nasFolderName
+            }
+            config = .nas(nasCfg)
         case .webRadio:
             config = .webRadio(WebRadioSourceConfig(stations: []))
         case .cloud:
@@ -877,6 +1007,176 @@ struct AppleMusicDetailSection: View {
             if let result = syncResult {
                 Text(result).font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+// MARK: - NASFolderPickerSection
+/// Lets the user drill into DLNA containers and choose a folder to scan.
+struct NASFolderPickerSection: View {
+    @Binding var source: MusicSource
+    @EnvironmentObject var sources: SourceViewModel
+    @State private var showingPicker = false
+    @State private var containers: [DLNAItem] = []
+    @State private var isLoading = false
+    @State private var currentParent = "0"
+    @State private var breadcrumb: [(id: String, name: String)] = [("0", "Root")]
+    @State private var error: String?
+
+    private var config: NASSourceConfig? {
+        guard case .nas(let c) = source.config else { return nil }
+        return c
+    }
+
+    var body: some View {
+        if let cfg = config, !cfg.browseRootName.isEmpty {
+            LabeledContent("Selected") {
+                Text(cfg.browseRootName)
+            }
+        }
+        Button(config?.browseRootName.isEmpty != false ? "Choose Folder" : "Change Folder") {
+            currentParent = "0"
+            breadcrumb = [("0", "Root")]
+            containers = []
+            error = nil
+            showingPicker = true
+            loadContainers(parentID: "0")
+        }
+        .sheet(isPresented: $showingPicker) {
+            NavigationStack {
+                folderList
+                    .navigationTitle("Select Folder")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") { showingPicker = false }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Use This Folder") { selectCurrent() }
+                                .fontWeight(.semibold)
+                        }
+                    }
+            }
+        }
+        if config?.browseRoot != "0" && config?.browseRoot.isEmpty == false {
+            Button("Reset to Root") {
+                guard case .nas(var c) = source.config else { return }
+                c.browseRoot = "0"
+                c.browseRootName = ""
+                source.config = .nas(c)
+            }
+            .foregroundStyle(.red)
+        }
+    }
+
+    private var folderList: some View {
+        List {
+            if breadcrumb.count > 1 {
+                Button {
+                    breadcrumb.removeLast()
+                    let parent = breadcrumb.last?.id ?? "0"
+                    currentParent = parent
+                    loadContainers(parentID: parent)
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+            }
+            if isLoading {
+                HStack { ProgressView(); Text("Loading...").foregroundStyle(.secondary) }
+            } else if let err = error {
+                Text(err).foregroundStyle(.red).font(.caption)
+            } else if containers.isEmpty {
+                Text("No subfolders").foregroundStyle(.secondary)
+            } else {
+                ForEach(containers, id: \.id) { container in
+                    Button {
+                        currentParent = container.id
+                        breadcrumb.append((container.id, container.title))
+                        loadContainers(parentID: container.id)
+                    } label: {
+                        Label(container.title, systemImage: "folder")
+                    }
+                    .foregroundStyle(.primary)
+                }
+            }
+        }
+    }
+
+    private func selectCurrent() {
+        guard case .nas(var c) = source.config else { return }
+        c.browseRoot = currentParent
+        c.browseRootName = breadcrumb.last?.name ?? "Root"
+        source.config = .nas(c)
+        showingPicker = false
+        containers = []
+        error = nil
+    }
+
+    private func loadContainers(parentID: String) {
+        isLoading = true
+        error = nil
+        containers = []
+        Task {
+            guard let adapter = await sources.resolver(for: source.id) as? NASSourceAdapter else {
+                error = "NAS adapter not available. Save connection settings first."
+                isLoading = false
+                return
+            }
+            do {
+                containers = try await adapter.listContainers(parentID: parentID)
+                isLoading = false
+            } catch {
+                self.error = error.localizedDescription
+                isLoading = false
+            }
+        }
+    }
+}
+
+// MARK: - SMBFolderPickerSection
+/// Lets the user pick a folder on an SMB share that is already connected in the Files app.
+struct SMBFolderPickerSection: View {
+    @Binding var source: MusicSource
+    @State private var showingPicker = false
+
+    private var config: NASSourceConfig? {
+        guard case .nas(let c) = source.config else { return nil }
+        return c
+    }
+
+    var body: some View {
+        Group {
+            if let cfg = config, !cfg.smbFolderName.isEmpty {
+                LabeledContent("Selected") { Text(cfg.smbFolderName) }
+            }
+            Button(config?.smbFolderName.isEmpty != false ? "Choose Folder" : "Change Folder") {
+                showingPicker = true
+            }
+            if config?.smbFolderName.isEmpty == false {
+                Button("Reset to None", role: .destructive) {
+                    guard case .nas(var c) = source.config else { return }
+                    c.smbBookmarkData = nil
+                    c.smbFolderName = ""
+                    source.config = .nas(c)
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $showingPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            _ = url.startAccessingSecurityScopedResource()
+            let name = url.lastPathComponent
+            let bookmark = try? url.bookmarkData(
+                options: [], includingResourceValuesForKeys: nil, relativeTo: nil
+            )
+            url.stopAccessingSecurityScopedResource()
+            guard case .nas(var c) = source.config else { return }
+            c.smbBookmarkData = bookmark
+            c.smbFolderName = name
+            source.config = .nas(c)
         }
     }
 }

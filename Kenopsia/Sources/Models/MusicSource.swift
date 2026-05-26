@@ -93,12 +93,19 @@ struct LocalSourceConfig: Codable, Equatable {
 }
 
 struct NASSourceConfig: Codable, Equatable {
-    var host: String = ""       // empty = use SSDP auto-discovery at scan time
-    var port: Int = 8200        // UPnP default
+    var host: String = ""       // empty = use SSDP auto-discovery at scan time (DLNA only)
+    var port: Int = 8200        // UPnP default (DLNA only)
     var protocol_: NASProtocol = .dlna
     var username: String = ""
     // Password stored in Keychain; only the Keychain key is stored here.
     var keychainKey: String = ""
+    /// DLNA container objectID to start browsing from (default "0" = root).
+    /// Set when the user picks a specific folder on the NAS.
+    var browseRoot: String = "0"
+    var browseRootName: String = ""   // display name of the selected folder
+    /// SMB: security-scoped bookmark for the user-chosen share folder.
+    var smbBookmarkData: Data? = nil
+    var smbFolderName: String = ""
 
     enum NASProtocol: String, Codable, Equatable { case dlna, smb }
 }

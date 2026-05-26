@@ -105,7 +105,7 @@ actor LibraryScanner {
             composer:      meta.composer ?? "",
             comment:       meta.comment ?? "",
             source:        sourceID,
-            uri:           .localFile(path: url.path),
+            uri:           .localFile(path: url.resolvingSymlinksInPath().path),
             format:        format,
             durationSeconds: meta.duration ?? 0,
             fileSizeBytes:   attrs?.fileSize,

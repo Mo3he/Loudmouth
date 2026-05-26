@@ -4,6 +4,7 @@ import SwiftUI
 /// Shown on first launch. Walks the user through the app and adding their first source.
 struct OnboardingView: View {
     @EnvironmentObject var sources: SourceViewModel
+    @EnvironmentObject var player: PlayerViewModel
     @Environment(\.dismiss) var dismiss
     @State private var page = 0
     @State private var showingAddSource = false
@@ -67,6 +68,7 @@ struct OnboardingView: View {
             NavigationStack {
                 SourcesView()
                     .environmentObject(sources)
+                    .environmentObject(player)
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") {

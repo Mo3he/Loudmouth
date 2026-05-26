@@ -26,7 +26,18 @@ actor SourceResolver {
 
         switch track.uri {
         case .localFile(let path):
-            return URL(fileURLWithPath: path)
+            let url = URL(fileURLWithPath: path)
+            // Fast path: file is where it was stored.
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+            // Slow path: app was reinstalled and the sandbox container UUID changed.
+            // Re-anchor any Documents/-relative path to the current container.
+            if let docsRange = path.range(of: "/Documents/"),
+               let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let relative = String(path[docsRange.upperBound...])
+                let remapped = docsURL.appendingPathComponent(relative)
+                if FileManager.default.fileExists(atPath: remapped.path) { return remapped }
+            }
+            return url
 
         case .remoteURL(let url):
             return url
@@ -273,13 +284,19 @@ actor NASSourceAdapter: MusicSourceAdapter {
 
     func fetchTracks() async throws -> [Track] {
         let descURL = try await resolvedDescriptionURL()
-        return try await browser.browse(serverURL: descURL, sourceID: sourceID)
+        return try await browser.browse(serverURL: descURL, sourceID: sourceID, rootObjectID: config.browseRoot)
     }
 
     /// Runs SSDP discovery and returns description URLs of any found MediaServers.
     /// Called from SourceViewModel to let the user pick a discovered server.
     func discoverServers(timeout: TimeInterval = 5) async -> [URL] {
         return await browser.discoverServers(timeout: timeout)
+    }
+
+    /// Lists containers at the given level so the UI can present a folder picker.
+    func listContainers(parentID: String = "0") async throws -> [DLNAItem] {
+        let descURL = try await resolvedDescriptionURL()
+        return try await browser.listContainers(serverURL: descURL, parentID: parentID)
     }
 
     // If a host is configured, run SSDP filtering to that host first (SSDP returns

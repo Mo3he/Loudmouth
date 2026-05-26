@@ -22,6 +22,14 @@ struct KenopsiaApp: App {
     @StateObject private var sources = SourceViewModel()
     @AppStorage("hasLaunchedBefore") private var hasLaunchedBefore = false
 
+    init() {
+        // Must be called before PlaybackService or any view accesses
+        // ChromecastService.shared, so that GCKCastContext is configured first.
+        #if canImport(GoogleCast)
+        ChromecastService.setup()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -29,16 +37,26 @@ struct KenopsiaApp: App {
                 .environmentObject(library)
                 .environmentObject(sources)
                 .sheet(isPresented: Binding(
-                    get: { !hasLaunchedBefore },
+                    get: { !hasLaunchedBefore && !DemoDataProvider.isActive },
                     set: { if !$0 { hasLaunchedBefore = true } }
                 )) {
                     OnboardingView()
                         .environmentObject(sources)
+                        .environmentObject(player)
                         .interactiveDismissDisabled()
                 }
                 .task { WatchConnectivityService.shared.activate() }
                 .task { registerWidgetNotifications() }
+                .task { await activateDemoModeIfNeeded() }
         }
+    }
+
+    @MainActor
+    private func activateDemoModeIfNeeded() async {
+        guard DemoDataProvider.isActive else { return }
+        // Brief yield so the SwiftUI layout pass completes before we inject data.
+        try? await Task.sleep(for: .milliseconds(300))
+        DemoDataProvider.load()
     }
 
     private func registerWidgetNotifications() {

@@ -53,6 +53,7 @@ final class PlaybackService: ObservableObject {
     private var positionTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     private var currentPathIsStream = false
+    private var currentPathIsCast = false
     private var settingsObserver: NSObjectProtocol?
     private var interruptionObserver: NSObjectProtocol?
     /// Seek offset for the AVAudioEngine path. AVAudioPlayerNode.sampleTime resets to 0
@@ -83,7 +84,6 @@ final class PlaybackService: ObservableObject {
     /// The in-flight resolveAndPlay task. Cancelled when a new play() is issued
     /// so stale resolves never overwrite newer playback.
     private var playTask: Task<Void, Never>?
-
     // MARK: - Init
     init(
         engine: AudioEngine = AudioEngine(),
@@ -100,12 +100,31 @@ final class PlaybackService: ObservableObject {
         self.statsStore = statsStore ?? ListeningStatsStore.shared
         self.eqStore = eqStore
 
+        // Activate the .playback audio session up front. AVAudioEngine.start()
+        // does this for local files, but the AVPlayer stream path (DLNA, NAS,
+        // Subsonic, B2) never starts the engine — without this call the first
+        // streamed track plays silently under the default .soloAmbient category.
+        engine.configureAudioSession()
+
+        // Sweep any temp stream files left over from previous sessions. Without
+        // this, downloaded remote tracks accumulate in /tmp indefinitely.
+        Task.detached(priority: .utility) { Self.purgeStreamTempFiles() }
+
         engine.onTrackDidFinish = { [weak self] in
             Task { @MainActor [weak self] in self?.handleTrackFinished() }
         }
 
         engine.onGaplessTransitionDidComplete = { [weak self] in
             Task { @MainActor [weak self] in self?.handleGaplessTransitionComplete() }
+        }
+
+        // Pre-schedule the next-next track once a crossfade finishes and the old
+        // (fading-out) player has fully stopped and is free to be reused as staging.
+        engine.onCrossfadeCompleted = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, let next = self.queue.nextTrack else { return }
+                await self.preScheduleNext(next)
+            }
         }
 
         engine.onEngineConfigurationChange = { [weak self] in
@@ -129,6 +148,23 @@ final class PlaybackService: ObservableObject {
 
         // Restore persisted queue so the user can resume where they left off.
         restoreQueue()
+
+        // React to Chromecast session lifecycle: auto-cast on connect, resume local on disconnect.
+        ChromecastService.shared.$isCasting
+            .receive(on: DispatchQueue.main)
+            .removeDuplicates()
+            .dropFirst()   // ignore the initial false emitted at subscription time
+            .sink { [weak self] isCasting in
+                guard let self else { return }
+                if isCasting {
+                    self.handleCastSessionStarted()
+                } else {
+                    // Capture position before ChromecastService resets it to 0.
+                    let lastPos = ChromecastService.shared.castPositionSeconds
+                    self.handleCastSessionEnded(resumeFrom: lastPos)
+                }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Playback commands
@@ -139,11 +175,20 @@ final class PlaybackService: ObservableObject {
         lastObservedPosition = -1
         crossfadeTriggeredForCurrentTrack = false
         playTask?.cancel()
-        playTask = Task { await resolveAndPlay(track: track) }
+        // Re-check isCasting so non-DRM tracks route to Cast even after an Apple Music
+        // track played locally (which temporarily sets currentPathIsCast = false).
+        if currentPathIsCast || ChromecastService.shared.isCasting {
+            currentPathIsCast = true
+            playTask = Task { await self.castCurrentTrack(track: track) }
+        } else {
+            playTask = Task { await resolveAndPlay(track: track) }
+        }
     }
 
     func pause() {
-        if currentPathIsAppleMusic {
+        if currentPathIsCast {
+            ChromecastService.shared.pause()
+        } else if currentPathIsAppleMusic {
             musicPlayer.pause()
         } else if currentPathIsStream {
             streamPlayer.pause()
@@ -158,6 +203,11 @@ final class PlaybackService: ObservableObject {
         engine.stopPlayers()
         stopStreamPlayer()
         stopMusicPlayer()
+        if currentPathIsCast {
+            ChromecastService.shared.stop()
+            currentPathIsCast = false
+            Task { await CastHTTPServer.shared.stop() }
+        }
         stopPositionTimer()
         state.status = .stopped
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -192,7 +242,12 @@ final class PlaybackService: ObservableObject {
     }
 
     func seek(to seconds: Double) {
-        if currentPathIsAppleMusic {
+        if currentPathIsCast {
+            ChromecastService.shared.seek(to: seconds)
+            state.positionSeconds = seconds
+            updateNowPlayingPlaybackRate(state.status == .playing ? 1 : 0)
+            return
+        } else if currentPathIsAppleMusic {
             musicPlayer.playbackTime = seconds
             state.positionSeconds = seconds
         } else if currentPathIsStream {
@@ -214,6 +269,11 @@ final class PlaybackService: ObservableObject {
 
     func setVolume(_ volume: Float) {
         let clamped = max(0, min(1, volume))
+        if currentPathIsCast {
+            ChromecastService.shared.setVolume(clamped)
+            state.volume = clamped
+            return
+        }
         engine.volume = clamped
         streamPlayer.volume = clamped
         // ApplicationMusicPlayer volume is system-controlled; adjust via MPVolumeView.
@@ -306,6 +366,60 @@ final class PlaybackService: ObservableObject {
         return AVURLAsset(url: cleanURL, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": token]])
     }
 
+    /// Prefix used for all temp files created by downloadToTemp. Used by the
+    /// startup sweep so we don't accidentally delete other apps' temp files.
+    private nonisolated static let streamTempPrefix = "kenopsia_stream_"
+
+    /// Downloads a remote audio file to a temporary location so it can be opened by
+    /// AVAudioFile and played through AVAudioEngine (enabling EQ and spectrum metering).
+    /// Returns nil if the download fails or is cancelled.
+    /// Streams to disk via URLSession.download(for:) so memory stays bounded even
+    /// for large lossless files.
+    private nonisolated func downloadToTemp(url: URL, track: Track) async -> URL? {
+        let ext = url.pathExtension.isEmpty ? (track.format.fileExtension) : url.pathExtension
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(Self.streamTempPrefix)\(track.id.uuidString).\(ext)")
+        // If already downloaded (e.g. seeking back in same track), reuse it.
+        if FileManager.default.fileExists(atPath: tempURL.path) { return tempURL }
+        do {
+            var request = URLRequest(url: url)
+            // Extract Authorization from query params if present (B2 private buckets).
+            if var comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let items = comps.queryItems,
+               let authIdx = items.firstIndex(where: { $0.name == "Authorization" }),
+               let token = items[authIdx].value {
+                var filtered = items; filtered.remove(at: authIdx)
+                comps.queryItems = filtered.isEmpty ? nil : filtered
+                request.url = comps.url ?? url
+                request.setValue(token, forHTTPHeaderField: "Authorization")
+            }
+            let (downloadedURL, response) = try await URLSession.shared.download(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                try? FileManager.default.removeItem(at: downloadedURL)
+                return nil
+            }
+            // Move the downloaded file (typically in /tmp/CFNetworkDownload_*) to our
+            // stable temp path. Replace any existing item at the destination.
+            if FileManager.default.fileExists(atPath: tempURL.path) {
+                try? FileManager.default.removeItem(at: tempURL)
+            }
+            try FileManager.default.moveItem(at: downloadedURL, to: tempURL)
+            return tempURL
+        } catch {
+            return nil
+        }
+    }
+
+    /// Deletes every temp stream file produced by downloadToTemp. Called on init
+    /// so we don't leak megabytes after each launch.
+    private nonisolated static func purgeStreamTempFiles() {
+        let tmp = FileManager.default.temporaryDirectory
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil) else { return }
+        for entry in entries where entry.lastPathComponent.hasPrefix(streamTempPrefix) {
+            try? FileManager.default.removeItem(at: entry)
+        }
+    }
+
     // MARK: - Private helpers
     private func resolveAndPlay(track: Track, startAt seconds: Double = 0) async {
         state.status = .buffering
@@ -356,21 +470,54 @@ final class PlaybackService: ObservableObject {
                     observeStreamPlayer(track: track)
                 }
             } else {
-                // ── Remote URL: AVPlayer (HTTP, HLS, Icecast, Subsonic stream) ─────
-                currentPathIsStream = true
-                currentPathIsAppleMusic = false
-                // Extract an Authorization query param (if present) and move it to an
-                // HTTP header. This prevents auth tokens from appearing in URL logs/caches
-                // (e.g. B2 private-bucket tokens appended by CloudSourceAdapter).
-                let asset = makeAVAssetExtractingAuth(from: url)
-                let item = AVPlayerItem(asset: asset)
-                streamPlayer.replaceCurrentItem(with: item)
-                streamPlayer.volume = state.volume
-                if seconds > 0 {
-                    await streamPlayer.seek(to: CMTime(seconds: seconds, preferredTimescale: 1000))
+                // ── Remote URL: finite audio files (DLNA, Subsonic, B2) get downloaded
+                //    to a temp file so they play through AVAudioEngine with full EQ and
+                //    spectrum metering. Live streams (web radio) go direct to AVPlayer.
+                let isLiveStream: Bool
+                if case .webRadio = track.uri { isLiveStream = true }
+                else { isLiveStream = false }
+
+                if !isLiveStream, let tempFile = await downloadToTemp(url: url, track: track) {
+                    // Play through AVAudioEngine for EQ + spectrum
+                    guard !Task.isCancelled else { return }
+                    currentPathIsStream = false
+                    currentPathIsAppleMusic = false
+                    positionOffset = seconds
+                    var usedEngine = false
+                    if let file = try? AVAudioFile(forReading: tempFile),
+                       (try? engine.play(file: file, replayGainDB: replayGain)) != nil {
+                        usedEngine = true
+                        if seconds > 0 {
+                            engine.seekActivePlayer(to: seconds, in: file)
+                        }
+                    }
+                    if !usedEngine {
+                        // Engine failed -- fall back to AVPlayer
+                        currentPathIsStream = true
+                        let item = AVPlayerItem(url: tempFile)
+                        streamPlayer.replaceCurrentItem(with: item)
+                        streamPlayer.volume = state.volume
+                        if seconds > 0 {
+                            await streamPlayer.seek(to: CMTime(seconds: seconds, preferredTimescale: 1000))
+                        }
+                        streamPlayer.play()
+                        observeStreamPlayer(track: track)
+                    }
+                } else {
+                    // Live stream or download failed -- use AVPlayer directly
+                    guard !Task.isCancelled else { return }
+                    currentPathIsStream = true
+                    currentPathIsAppleMusic = false
+                    let asset = makeAVAssetExtractingAuth(from: url)
+                    let item = AVPlayerItem(asset: asset)
+                    streamPlayer.replaceCurrentItem(with: item)
+                    streamPlayer.volume = state.volume
+                    if seconds > 0 {
+                        await streamPlayer.seek(to: CMTime(seconds: seconds, preferredTimescale: 1000))
+                    }
+                    streamPlayer.play()
+                    observeStreamPlayer(track: track)
                 }
-                streamPlayer.play()
-                observeStreamPlayer(track: track)
             }
 
             // Final cancellation check before committing state. If a newer play()
@@ -429,8 +576,10 @@ final class PlaybackService: ObservableObject {
             forName: .AVPlayerItemDidPlayToEndTime,
             object: streamPlayer.currentItem, queue: .main
         ) { [weak self] _ in
-            guard let self, self.streamEndGeneration == capturedGen else { return }
-            Task { @MainActor [weak self] in self?.handleTrackFinished() }
+            Task { @MainActor [weak self] in
+                guard let self, self.streamEndGeneration == capturedGen else { return }
+                self.handleTrackFinished()
+            }
         }
         // Stream time updates
         let interval = CMTime(seconds: 0.5, preferredTimescale: 1000)
@@ -532,24 +681,134 @@ final class PlaybackService: ObservableObject {
     }
 
     private func preScheduleNext(_ track: Track) async {
+        PLog.scheduler.debug("preScheduleNext: start '\(track.title, privacy: .public)'")
         guard let url = try? await sourceResolver.localURL(for: track),
               url.isFileURL,
               let file = try? AVAudioFile(forReading: url) else {
+            PLog.scheduler.warning("preScheduleNext: BAIL — failed to resolve/open file for '\(track.title, privacy: .public)'")
             return
         }
         // Only schedule if we're still on the engine path and the track we're
         // pre-scheduling for is still the actual next track. If a transition
         // happened while we were resolving the URL, the player slots have
         // swapped and scheduling now would corrupt the active player.
-        guard !currentPathIsStream, !currentPathIsAppleMusic,
+        guard !currentPathIsStream, !currentPathIsAppleMusic, !currentPathIsCast,
               queue.nextTrack?.id == track.id else {
+            PLog.scheduler.warning("preScheduleNext: BAIL — guard failed (stream=\(self.currentPathIsStream, privacy: .public) appleMusic=\(self.currentPathIsAppleMusic, privacy: .public) cast=\(self.currentPathIsCast, privacy: .public) nextTrackMatch=\(self.queue.nextTrack?.id == track.id, privacy: .public)) for '\(track.title, privacy: .public)'")
             return
         }
+        PLog.scheduler.debug("preScheduleNext: calling scheduleNext for '\(track.title, privacy: .public)'")
         engine.scheduleNext(file: file)
     }
 
+    // MARK: - Cast session lifecycle
+
+    /// Called when a Cast session becomes active. Stops local playback and
+    /// begins casting the current track to the connected device.
+    private func handleCastSessionStarted() {
+        // Apple Music tracks are DRM-protected and cannot be cast.
+        // If that's what's playing, leave it running locally and do nothing else.
+        if let track = queue.currentTrack, case .appleMusicID = track.uri {
+            return
+        }
+        engine.stopPlayers()
+        stopStreamPlayer()
+        stopMusicPlayer()
+        currentPathIsCast = true
+        guard let track = queue.currentTrack else { return }
+        let resumeAt = state.positionSeconds
+        playGeneration += 1
+        playTask?.cancel()
+        playTask = Task { await self.castCurrentTrack(track: track, startAt: resumeAt) }
+    }
+
+    /// Called when the Cast session ends (user disconnects or session drops).
+    /// Resumes local playback from the last known cast position.
+    private func handleCastSessionEnded(resumeFrom seconds: Double) {
+        guard currentPathIsCast else { return }
+        currentPathIsCast = false
+        Task { await CastHTTPServer.shared.stop() }
+        guard state.status == .playing, let track = queue.currentTrack else { return }
+        playGeneration += 1
+        playTask?.cancel()
+        state.positionSeconds = seconds
+        positionOffset = seconds
+        playTask = Task { await resolveAndPlay(track: track, startAt: seconds) }
+    }
+
+    /// Resolves the stream URL for `track` and loads it onto the Chromecast receiver.
+    /// For local files, starts the CastHTTPServer and registers the file so the
+    /// Chromecast can pull it over the local network. Apple Music tracks (DRM) are
+    /// unsupported and result in a stopped state.
+    private func castCurrentTrack(track: Track, startAt seconds: Double = 0) async {
+        print("[Cast] castCurrentTrack: '\(track.title)' at \(seconds)s")
+        state.status = .buffering
+
+        // Apple Music tracks are DRM-protected and cannot be streamed to Chromecast.
+        // Fall back to local Apple Music playback for this track.
+        if case .appleMusicID = track.uri {
+            print("[Cast] Track is Apple Music DRM — falling back to local Apple Music")
+            currentPathIsCast = false
+            await resolveAndPlay(track: track, startAt: seconds)
+            return
+        }
+
+        do {
+            let url = try await sourceResolver.localURL(for: track)
+            print("[Cast] Resolved URL: \(url)")
+            guard !Task.isCancelled else { return }
+
+            let castURL: URL
+            if url.isFileURL {
+                await CastHTTPServer.shared.start()
+                guard let httpURL = await CastHTTPServer.shared.register(
+                    fileURL: url,
+                    trackID: track.id,
+                    format: track.format
+                ) else {
+                    print("[Cast] HTTP server register returned nil (no local IP?)")
+                    state.status = .stopped; return
+                }
+                castURL = httpURL
+            } else {
+                castURL = url
+            }
+
+            guard !Task.isCancelled else { return }
+
+            let castSucceeded = ChromecastService.shared.cast(track: track, streamURL: castURL)
+
+            guard castSucceeded else {
+                print("[Cast] cast() returned false — remoteClient nil. Falling back to local.")
+                // remoteClient wasn't ready yet; fall back to local playback.
+                currentPathIsCast = false
+                Task { await CastHTTPServer.shared.stop() }
+                await resolveAndPlay(track: track, startAt: seconds)
+                return
+            }
+
+            print("[Cast] Cast started successfully")
+            state.status = .playing
+            playingTrackID = track.id
+            state.currentTrackID = track.id
+            state.durationSeconds = track.durationSeconds
+            state.positionSeconds = seconds
+            state.nowPlayingTitle = track.title
+            state.nowPlayingArtist = track.artist
+            state.nowPlayingAlbum = track.album
+            state.nowPlayingArtworkCacheKey = track.artworkCacheKey
+            updateNowPlayingInfo(track: track)
+            startPositionTimer()
+            Task { currentLyrics = await lyricsService.lyrics(for: track) }
+        } catch {
+            state.status = .stopped
+        }
+    }
+
     private func resumePlayback() {
-        if currentPathIsAppleMusic {
+        if currentPathIsCast {
+            ChromecastService.shared.resume()
+        } else if currentPathIsAppleMusic {
             Task { try? await musicPlayer.play() }
         } else if currentPathIsStream {
             streamPlayer.play()
@@ -572,14 +831,17 @@ final class PlaybackService: ObservableObject {
     private func handleTrackFinished() {
         // Prevent re-entrant calls (position-timer safety net + completion callback).
         guard !isAdvancingTrack else {
+            PLog.service.debug("handleTrackFinished: skipped — isAdvancingTrack=true")
             return
         }
         // Discard stale callbacks: if the user manually navigated to a different
         // track (next/previous/queue-tap), playingTrackID will no longer match the
         // queue's current track. The real play() call will handle state correctly.
         guard queue.currentTrack?.id == playingTrackID else {
+            PLog.service.debug("handleTrackFinished: skipped — trackID mismatch (current=\(self.queue.currentTrack?.title ?? "nil", privacy: .public) playing=\(self.playingTrackID?.uuidString ?? "nil", privacy: .public))")
             return
         }
+        PLog.service.debug("handleTrackFinished: advancing from '\(self.queue.currentTrack?.title ?? "?", privacy: .public)' stagingReady=\(self.engine.stagingIsReady, privacy: .public) xfade=\(self.engine.crossfadeDuration, privacy: .public)s")
         isAdvancingTrack = true
         defer { isAdvancingTrack = false }
         crossfadeTriggeredForCurrentTrack = false
@@ -589,7 +851,7 @@ final class PlaybackService: ObservableObject {
         if queue.repeatMode == .one {
             play()
         } else if queue.nextIndex != nil {
-            if currentPathIsStream || currentPathIsAppleMusic {
+            if currentPathIsCast || currentPathIsStream || currentPathIsAppleMusic {
                 // Streams and Apple Music tracks can't use gapless engine handoff;
                 // just advance the index and call play() to start the next item.
                 queue.moveToNext()
@@ -607,18 +869,28 @@ final class PlaybackService: ObservableObject {
                 if !transitioned {
                     // Staging player had nothing queued (preScheduleNext failed).
                     // Fall back to a full resolve-and-play for the next track.
+                    PLog.service.warning("handleTrackFinished: transition failed — calling play() fallback for '\(self.queue.currentTrack?.title ?? "?", privacy: .public)'")
                     play()
                     return
                 }
                 state.status = .playing
+                PLog.service.debug("handleTrackFinished: transition OK → '\(self.queue.currentTrack?.title ?? "?", privacy: .public)'")
                 if let track = queue.currentTrack {
                     playingTrackID = track.id   // update so the next completion is accepted
                     gaplessExpectedGeneration = playGeneration
-                    // Re-apply ReplayGain for the new active player (former staging player).
-                    let replayGain = UserDefaults.standard.string(forKey: "replayGainMode") == "album"
-                        ? (track.replayGainAlbum ?? track.replayGainTrack)
-                        : track.replayGainTrack
-                    engine.applyReplayGain(replayGain)
+                    // For gapless (no crossfade): apply ReplayGain immediately so the new
+                    // active player plays at the right volume from the first sample.
+                    // For crossfade: the ramp's final asyncAfter step applies
+                    // pendingActivePlayerVolume. Calling applyReplayGain here would
+                    // immediately set the volume to the target, then the first ramp step
+                    // (i=0, fires on the next run-loop tick) resets it back to fadeIn(0)=0,
+                    // making the new track briefly loud then silent — no audible crossfade.
+                    if engine.crossfadeDuration == 0 {
+                        let rg = UserDefaults.standard.string(forKey: "replayGainMode") == "album"
+                            ? (track.replayGainAlbum ?? track.replayGainTrack)
+                            : track.replayGainTrack
+                        engine.applyReplayGain(rg)
+                    }
                     state.currentTrackID = track.id
                     state.durationSeconds = track.durationSeconds
                     state.positionSeconds = 0
@@ -638,7 +910,15 @@ final class PlaybackService: ObservableObject {
                             }
                         }
                     }
-                    if let next = queue.nextTrack { Task { await preScheduleNext(next) } }
+                    // For gapless: pre-schedule the next-next track immediately — the old
+                    // player is already stopped so scheduleNext() can reuse it safely.
+                    // For crossfade: the old player is still fading out. Pre-scheduling now
+                    // would call stagingPlayer.stop() on the fading player, killing the fade.
+                    // Instead, onCrossfadeCompleted fires when the ramp finishes and the old
+                    // player has stopped, then pre-schedules from there.
+                    if engine.crossfadeDuration == 0 {
+                        if let next = queue.nextTrack { Task { await preScheduleNext(next) } }
+                    }
                 }
             }
         } else {
@@ -654,11 +934,14 @@ final class PlaybackService: ObservableObject {
         // If play() was called manually between the engine swap and this handler
         // executing on the main actor, this callback is stale. Discard it.
         guard gaplessExpectedGeneration == playGeneration else {
+            PLog.service.debug("handleGaplessTransitionComplete: stale (gen \(self.gaplessExpectedGeneration, privacy: .public) != play \(self.playGeneration, privacy: .public))")
             return
         }
         guard queue.currentTrack?.id == playingTrackID else {
+            PLog.service.debug("handleGaplessTransitionComplete: stale (trackID mismatch)")
             return
         }
+        PLog.service.debug("handleGaplessTransitionComplete: advancing from '\(self.queue.currentTrack?.title ?? "?", privacy: .public)'")
         if let track = queue.currentTrack {
             statsStore.record(played: track)
         }
@@ -727,6 +1010,28 @@ final class PlaybackService: ObservableObject {
     }
 
     private func tickPosition() {
+        // Cast: sync position from ChromecastService's polled media status.
+        if currentPathIsCast {
+            let pos = ChromecastService.shared.castPositionSeconds
+            let dur = ChromecastService.shared.castDurationSeconds
+            state.positionSeconds = pos
+            if dur > 0 { state.durationSeconds = dur }
+            writeStateToAppGroup()
+            // Stall-detect end-of-track (same heuristic used for AVAudioEngine path).
+            if state.status == .playing, dur > 0, pos >= dur - 0.5 {
+                if abs(pos - lastObservedPosition) < 0.01 {
+                    stallTickCount += 1
+                    if stallTickCount >= 4 {
+                        stallTickCount = 0
+                        handleTrackFinished()
+                    }
+                } else {
+                    stallTickCount = 0
+                }
+            }
+            lastObservedPosition = pos
+            return
+        }
         guard !currentPathIsStream else { return }  // stream uses periodic observer
         if currentPathIsAppleMusic {
             let playbackTime = musicPlayer.playbackTime
@@ -767,7 +1072,9 @@ final class PlaybackService: ObservableObject {
             // Player node has no render time — might have finished and stopped.
             // If we're supposedly playing, this is likely end-of-track.
             stallTickCount += 1
+            PLog.stall.debug("tickPosition: lastRenderTime nil — stallCount=\(self.stallTickCount, privacy: .public) track='\(self.queue.currentTrack?.title ?? "?", privacy: .public)'")
             if stallTickCount >= 3 {
+                PLog.stall.warning("tickPosition: stall limit reached (nil lastRenderTime) — calling handleTrackFinished")
                 stallTickCount = 0
                 handleTrackFinished()
             }
@@ -799,6 +1106,7 @@ final class PlaybackService: ObservableObject {
             stallTickCount += 1
             if stallTickCount >= 3, state.durationSeconds > 0,
                seconds >= state.durationSeconds - 0.5 {
+                PLog.stall.warning("tickPosition: stall limit reached (pos stalled at \(seconds, privacy: .public)/\(self.state.durationSeconds, privacy: .public)) — calling handleTrackFinished")
                 stallTickCount = 0
                 handleTrackFinished()
             }
@@ -841,9 +1149,16 @@ final class PlaybackService: ObservableObject {
             self?.resumeOrPlay(); return .success
         }
         cc.pauseCommand.addTarget { [weak self] _ in
-            // AirPods and many Bluetooth devices always send pauseCommand regardless of
-            // direction — treat it as a toggle so it works as play *and* pause.
-            self?.togglePlayPause(); return .success
+            guard let self else { return .success }
+            // AirPods and many Bluetooth remotes send pauseCommand for both
+            // pause and resume taps. Toggle based on current state so a single
+            // gesture works correctly in both directions.
+            if self.state.status == .paused {
+                self.resumeOrPlay()
+            } else {
+                self.pause()
+            }
+            return .success
         }
         cc.togglePlayPauseCommand.addTarget { [weak self] _ in
             self?.togglePlayPause(); return .success
@@ -972,4 +1287,15 @@ final class PlaybackService: ObservableObject {
         // shuffledOrder and all other internal state exactly as persisted.
         queue.restore(from: savedQueue)
     }
+
+    // MARK: - Demo / screenshot support
+#if DEBUG
+    /// Injects a static playback state and queue without triggering audio.
+    /// Only used by DemoDataProvider for App Store screenshot automation.
+    func setDemoState(_ demoState: PlayerState, queue demoQueue: Queue) {
+        stopPositionTimer()
+        state = demoState
+        queue.replace(with: demoQueue.tracks, startAt: demoQueue.currentIndex)
+    }
+#endif
 }

@@ -28,12 +28,21 @@ actor DLNABrowser {
     }
 
     // MARK: - Content Directory Browse
-    /// Browse a DLNA content directory starting at the root container.
+    /// Browse a DLNA content directory starting at the given container.
     /// Returns all audio tracks found in the tree.
-    func browse(serverURL: URL, sourceID: MusicSourceID) async throws -> [Track] {
+    func browse(serverURL: URL, sourceID: MusicSourceID, rootObjectID: String = "0") async throws -> [Track] {
         // Fetch device description to find the ContentDirectory control URL.
         let controlURL = try await fetchControlURL(descriptionURL: serverURL)
-        return try await browseContainer(objectID: "0", controlURL: controlURL, sourceID: sourceID)
+        var tracks = try await browseContainer(objectID: rootObjectID, controlURL: controlURL, sourceID: sourceID)
+        // Deduplicate by resource URL. NAS DLNA servers expose the same audio files
+        // through multiple virtual containers (By Album, By Artist, All Music, etc.).
+        // Without deduplication every song appears hundreds of times in the library.
+        var seenURLs = Set<String>()
+        tracks = tracks.filter { track in
+            guard case .dlnaURL(let url) = track.uri else { return true }
+            return seenURLs.insert(url.absoluteString).inserted
+        }
+        return tracks
     }
 
     /// Recursively browse a container (objectID "0" = root).
@@ -98,6 +107,15 @@ actor DLNABrowser {
             throw DLNAError.soapFailed
         }
         return try DLNAResponseParser().parse(data: data)
+    }
+
+    // MARK: - Container listing (for folder picker)
+    /// Lists immediate child containers of the given objectID without recursing.
+    /// Used by the NAS folder picker so the user can select which folder to scan.
+    func listContainers(serverURL: URL, parentID: String = "0") async throws -> [DLNAItem] {
+        let controlURL = try await fetchControlURL(descriptionURL: serverURL)
+        let result = try await soapBrowse(objectID: parentID, controlURL: controlURL)
+        return result.items.filter { $0.isContainer }
     }
 
     // MARK: - Device description
@@ -174,13 +192,26 @@ struct DLNABrowseResult {
     var items: [DLNAItem]
 }
 
+/// One `<res>` entry from a DIDL-Lite item. DLNA items routinely expose
+/// multiple resources for the same audio file: the original plus one or more
+/// on-the-fly transcoded variants. Capturing all of them lets us pick the
+/// highest-quality one rather than blindly trusting parser order.
+struct DLNAResource {
+    var url: URL
+    var mimeType: String?
+    var bitrate: Int?            // bits-per-second from `bitrate` attribute
+    var size: Int64?             // bytes from `size` attribute
+    var sampleFrequency: Int?    // Hz from `sampleFrequency` attribute
+    var bitsPerSample: Int?
+    var nrAudioChannels: Int?
+}
+
 struct DLNAItem {
     var id: String
     var parentID: String
     var title: String
     var isContainer: Bool
-    var resourceURL: URL?
-    var mimeType: String?
+    var resources: [DLNAResource] = []
     var artist: String?
     var album: String?
     var genre: String?
@@ -188,16 +219,26 @@ struct DLNAItem {
     var trackNumber: Int?
     var durationSeconds: Double?
     var albumArtURL: URL?
+    var upnpClass: String?
+
+    /// First resource URL, retained for callers that don't care about scoring
+    /// (the folder-picker container list never reaches this, and the parser
+    /// uses it for legacy "did we see a res yet" checks).
+    var resourceURL: URL? { resources.first?.url }
 
     func asTrack(sourceID: MusicSourceID) -> Track? {
-        guard !isContainer, let url = resourceURL else { return nil }
+        guard !isContainer else { return nil }
+        // Only accept audio items. DLNA servers expose video, images, etc. under
+        // different upnp:class values. Audio items have class "object.item.audioItem*".
+        if let cls = upnpClass, !cls.hasPrefix("object.item.audioItem") { return nil }
+        guard let res = Self.pickBestResource(from: resources) else { return nil }
         // Determine format from MIME type first so extensionless URLs (e.g.
         // http://host:8200/MediaItems/123) are not silently dropped.
         let format: AudioFormat
-        if let mime = mimeType, let f = AudioFormat(mimeType: mime) {
+        if let mime = res.mimeType, let f = AudioFormat(mimeType: mime) {
             format = f
         } else {
-            let ext = url.pathExtension
+            let ext = res.url.pathExtension
             guard let f = AudioFormat(fileExtension: ext) else { return nil }
             format = f
         }
@@ -211,11 +252,76 @@ struct DLNAItem {
             year:            year,
             trackNumber:     trackNumber,
             source:          sourceID,
-            uri:             .dlnaURL(url: url),
+            uri:             .dlnaURL(url: res.url),
             format:          format,
             durationSeconds: durationSeconds ?? 0,
             artworkCacheKey: artKey
         )
+    }
+
+    /// Picks the highest-quality resource. Many DLNA servers (Plex, Synology,
+    /// some Asset UPnP configs) advertise transcoded variants before the
+    /// original, so picking the first `<res>` silently downgrades the user to
+    /// MP3 even when the source is lossless. Strategy:
+    ///   1. Prefer entries whose MIME type indicates a lossless codec.
+    ///   2. Among equally-rated codecs, prefer the highest declared bitrate.
+    ///   3. If no bitrate metadata, prefer the largest declared size.
+    ///   4. As a final tie-breaker, preserve the server's original order.
+    static func pickBestResource(from resources: [DLNAResource]) -> DLNAResource? {
+        guard let first = resources.first else { return nil }
+        if resources.count == 1 { return first }
+        let scored = resources.enumerated().map { (index, r) in
+            (resource: r, score: scoreResource(r), order: index)
+        }
+        return scored.max { a, b in
+            if a.score != b.score { return a.score < b.score }
+            return a.order > b.order   // earlier index wins on tie
+        }?.resource
+    }
+
+    /// Higher = better. Codec class is the dominant factor; bitrate/size break
+    /// ties only when codec class is equal.
+    private static func scoreResource(_ r: DLNAResource) -> Int {
+        var score = 0
+        // Codec class (multiplied so it always outranks bitrate)
+        switch codecClass(mimeType: r.mimeType, url: r.url) {
+        case .lossless: score += 1_000_000_000
+        case .lossyHigh: score += 500_000_000
+        case .lossy:    score += 100_000_000
+        case .unknown:  break
+        }
+        // Bitrate (bps). Caps to avoid overflowing past the next class boundary.
+        if let bps = r.bitrate { score += min(bps, 50_000_000) }
+        // Size (bytes / 1000) as a secondary signal when bitrate missing.
+        else if let bytes = r.size { score += Int(min(bytes / 1000, 50_000_000)) }
+        return score
+    }
+
+    private enum CodecClass { case lossless, lossyHigh, lossy, unknown }
+    private static func codecClass(mimeType: String?, url: URL) -> CodecClass {
+        let mime = mimeType?.lowercased() ?? ""
+        let ext  = url.pathExtension.lowercased()
+        let losslessMimes: Set<String> = [
+            "audio/flac", "audio/x-flac",
+            "audio/wav",  "audio/x-wav", "audio/wave",
+            "audio/aiff", "audio/x-aiff",
+            "audio/alac", "audio/x-alac",
+            "audio/dsd",  "audio/x-dsd"
+        ]
+        let losslessExts: Set<String> = ["flac", "wav", "aiff", "aif", "alac", "ape", "wv", "dsf", "dff"]
+        let lossyHighMimes: Set<String> = ["audio/mp4", "audio/x-m4a"]   // ambiguous (ALAC or AAC)
+        let lossyHighExts: Set<String>  = ["m4a"]
+        let lossyMimes: Set<String> = [
+            "audio/mpeg", "audio/mp3",
+            "audio/aac",  "audio/x-aac",
+            "audio/ogg",  "audio/vorbis", "audio/opus",
+            "audio/webm"
+        ]
+        let lossyExts: Set<String> = ["mp3", "aac", "ogg", "opus", "oga", "webm"]
+        if losslessMimes.contains(mime) || losslessExts.contains(ext) { return .lossless }
+        if lossyHighMimes.contains(mime) || lossyHighExts.contains(ext) { return .lossyHigh }
+        if lossyMimes.contains(mime)    || lossyExts.contains(ext)    { return .lossy }
+        return .unknown
     }
 }
 
@@ -226,6 +332,11 @@ class DLNAResponseParser: NSObject, XMLParserDelegate {
     private var current: DLNAItem?
     private var currentText = ""
     private var insideResult = false
+    /// Resource being built from the current `<res>` element. The element's
+    /// attributes are read in didStartElement; its URL is taken from the
+    /// element's text in didEndElement, then the resource is appended to the
+    /// current item.
+    private var currentResource: DLNAResource?
 
     func parse(data: Data) throws -> DLNABrowseResult {
         // The Browse result is double-XML: the SOAP response contains a
@@ -264,19 +375,31 @@ class DLNAResponseParser: NSObject, XMLParserDelegate {
                                parentID: attributes["parentID"] ?? "",
                                title: "", isContainer: false)
         case "res":
-            if var item = current, !item.isContainer {
-                // protocolInfo format: "http-get:*:audio/mpeg:DLNA.ORG_PN=..."
-                // The MIME type is the 3rd colon-separated field (index 2).
-                if let proto = attributes["protocolInfo"] {
-                    let fields = proto.split(separator: ":")
-                    if fields.count > 2 { item.mimeType = String(fields[2]) }
-                }
-                // Parse duration: "h:mm:ss.xxx"
-                if let durStr = attributes["duration"] {
-                    item.durationSeconds = parseDuration(durStr)
-                }
+            // Collect all <res> entries. DLNA items often include several variants
+            // (original + transcoded). DLNAItem.pickBestResource picks the highest
+            // quality one when constructing the Track.
+            guard current?.isContainer == false else { break }
+            var res = DLNAResource(url: URL(fileURLWithPath: "/"))   // url filled in didEndElement
+            // protocolInfo format: "http-get:*:audio/mpeg:DLNA.ORG_PN=..."
+            // The MIME type is the 3rd colon-separated field (index 2).
+            if let proto = attributes["protocolInfo"] {
+                let fields = proto.split(separator: ":")
+                if fields.count > 2 { res.mimeType = String(fields[2]) }
+            }
+            if let bps = attributes["bitrate"].flatMap(Int.init) { res.bitrate = bps }
+            if let sz = attributes["size"].flatMap(Int64.init)   { res.size = sz }
+            if let sf = attributes["sampleFrequency"].flatMap(Int.init) { res.sampleFrequency = sf }
+            if let bs = attributes["bitsPerSample"].flatMap(Int.init)   { res.bitsPerSample = bs }
+            if let ch = attributes["nrAudioChannels"].flatMap(Int.init) { res.nrAudioChannels = ch }
+            // Parse duration: "h:mm:ss.xxx" — duration is per-resource in DIDL
+            // but in practice every variant reports the same value, so write it
+            // to the item once (first non-empty wins).
+            if var item = current, item.durationSeconds == nil || item.durationSeconds == 0,
+               let durStr = attributes["duration"] {
+                item.durationSeconds = parseDuration(durStr)
                 current = item
             }
+            currentResource = res
         default: break
         }
     }
@@ -295,10 +418,14 @@ class DLNAResponseParser: NSObject, XMLParserDelegate {
         case "upnp:genre":      item.genre = currentText
         case "upnp:originalTrackNumber": item.trackNumber = Int(currentText)
         case "dc:date":         item.year = Int(currentText.prefix(4))
+        case "upnp:class":      item.upnpClass = currentText
         case "res":
-            if !item.isContainer, let url = URL(string: currentText.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                item.resourceURL = url
+            if !item.isContainer, var res = currentResource,
+               let url = URL(string: currentText.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                res.url = url
+                item.resources.append(res)
             }
+            currentResource = nil
         case "upnp:albumArtURI":
             item.albumArtURL = URL(string: currentText)
         case "container", "item":

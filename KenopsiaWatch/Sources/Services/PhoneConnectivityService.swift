@@ -43,6 +43,18 @@ final class PhoneConnectivityService: NSObject, ObservableObject {
         WCSession.default.sendMessage(msg, replyHandler: nil)
     }
 
+    // MARK: - Demo
+
+    func injectDemoState() {
+        status          = "playing"
+        positionSeconds = 87
+        durationSeconds = 210
+        title           = "Idea"
+        artist          = "Kai Engel"
+        album           = "Idea"
+        isPhoneReachable = true
+    }
+
     // MARK: - Internal
 
     fileprivate func apply(context: [String: Any]) {

@@ -141,14 +141,40 @@ final class SourceViewModel: ObservableObject {
                     try Task.checkCancellation()
                     LibraryStore.shared.merge(tracks: tracks, from: source.id)
 
-                case .nas:
-                    guard let adapter = await resolver.adapter(for: source.id) as? NASSourceAdapter else {
-                        completion?("Adapter not registered")
-                        return
+                case .nas(let cfg):
+                    switch cfg.protocol_ {
+                    case .dlna:
+                        guard let adapter = await resolver.adapter(for: source.id) as? NASSourceAdapter else {
+                            completion?("Adapter not registered")
+                            return
+                        }
+                        tracks = try await adapter.fetchTracks()
+                        try Task.checkCancellation()
+                        LibraryStore.shared.merge(tracks: tracks, from: source.id)
+                    case .smb:
+                        guard let bookmark = cfg.smbBookmarkData else {
+                            completion?("No folder selected — tap 'Choose Folder' first")
+                            return
+                        }
+                        var stale = false
+                        let url = try URL(
+                            resolvingBookmarkData: bookmark,
+                            options: .withoutUI,
+                            relativeTo: nil,
+                            bookmarkDataIsStale: &stale
+                        )
+                        if localScopeURLs[source.id] == nil {
+                            _ = url.startAccessingSecurityScopedResource()
+                            localScopeURLs[source.id] = url
+                        }
+                        let scopeURL = localScopeURLs[source.id] ?? url
+                        let scanner = LibraryScanner(store: LibraryStore.shared)
+                        tracks = await scanner.scan(source: source, urls: [scopeURL])
+                        if !self.sources.contains(where: { $0.id == source.id }) {
+                            LibraryStore.shared.removeTracks(from: source.id)
+                            return
+                        }
                     }
-                    tracks = try await adapter.fetchTracks()
-                    try Task.checkCancellation()
-                    LibraryStore.shared.merge(tracks: tracks, from: source.id)
 
                 case .webRadio(let cfg):
                     // Web radio stations become individual "tracks" in the library.
@@ -299,6 +325,12 @@ final class SourceViewModel: ObservableObject {
     }
 
     // MARK: - Adapters
+
+    /// Returns the registered adapter for a source. Used by the NAS folder picker.
+    func resolver(for sourceID: MusicSourceID) async -> (any MusicSourceAdapter)? {
+        await resolver.adapter(for: sourceID)
+    }
+
     private func registerAdapter(for source: MusicSource) {
         switch source.config {
         case .subsonic(let config):
@@ -341,15 +373,20 @@ final class SourceViewModel: ObservableObject {
             save()
         }
         sources.forEach { registerAdapter(for: $0) }
-        // Re-activate security scopes for all local sources so files are accessible
+        // Re-activate security scopes for all local and SMB NAS sources so files are accessible
         // immediately on launch (not only after the user triggers a scan).
-        sources.filter { $0.kind == .local }.forEach { activateSecurityScope(for: $0) }
+        sources.filter { $0.kind == .local || ($0.kind == .nas) }.forEach { activateSecurityScope(for: $0) }
     }
 
     private func activateSecurityScope(for source: MusicSource) {
-        guard case .local(let cfg) = source.config,
-              let bookmark = cfg.bookmarkData,
-              localScopeURLs[source.id] == nil else { return }
+        guard localScopeURLs[source.id] == nil else { return }
+        let bookmark: Data?
+        switch source.config {
+        case .local(let cfg):   bookmark = cfg.bookmarkData
+        case .nas(let cfg) where cfg.protocol_ == .smb: bookmark = cfg.smbBookmarkData
+        default: return
+        }
+        guard let bookmark else { return }
         var stale = false
         guard let url = try? URL(
             resolvingBookmarkData: bookmark,

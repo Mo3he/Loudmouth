@@ -25,6 +25,9 @@
     <key>NSBonjourServices</key>
     <array>
         <string>_kenopsia._tcp</string>
+        <string>_googlecast._tcp</string>
+        <string>_CC1AD845._googlecast._tcp</string>
+        <string>_CC1AD845._sub._googlecast._tcp</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Kenopsia connects to NAS drives and DLNA servers on your local network to stream music.</string>
@@ -35,6 +38,25 @@
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>
+        <true/>
+        <!--
+            App Review justification:
+            Kenopsia is a personal music player that connects exclusively to
+            user-owned media servers (DLNA / UPnP MediaServers, Subsonic-API
+            servers, Backblaze B2 buckets) configured by the user.
+
+            NSAllowsLocalNetworking covers AVURLSession but does NOT cover the
+            mediaserverd XPC that AVPlayer uses to fetch audio segments. Without
+            NSAllowsArbitraryLoadsForMedia, plain-HTTP audio streams from a NAS
+            on a private IP range (RFC 1918: 10.0.0.0/8, 172.16.0.0/12,
+            192.168.0.0/16) fail silently inside AVPlayer.
+
+            We do NOT use NSAllowsArbitraryLoads. Non-media network traffic
+            (artwork lookups, lyrics) continues to require HTTPS. The exemption
+            is scoped to media loads only and is required by the app's core
+            "play music from my NAS" use case.
+        -->
+        <key>NSAllowsArbitraryLoadsForMedia</key>
         <true/>
         <key>NSExceptionDomains</key>
         <dict/>

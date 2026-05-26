@@ -11,54 +11,61 @@ struct ArtworkFixerView: View {
     @State private var isScanning = false
     @State private var isFixingAll = false
     @State private var fixProgress: Double = 0
+    @State private var fixStatus: String = ""
     @State private var selectedAlbum: Album?
     @State private var photoPickerItem: PhotosPickerItem?
 
     private let minResolution: CGFloat = 500
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if isScanning {
-                    ProgressView("Scanning artwork...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if problems.isEmpty {
-                    ContentUnavailableView(
-                        "All Good",
-                        systemImage: "checkmark.seal.fill",
-                        description: Text("Every album has high-quality artwork.")
-                    )
-                } else {
-                    problemList
-                }
+        Group {
+            if isScanning {
+                ProgressView("Scanning artwork...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if problems.isEmpty {
+                ContentUnavailableView(
+                    "All Good",
+                    systemImage: "checkmark.seal.fill",
+                    description: Text("Every album has high-quality artwork.")
+                )
+            } else {
+                problemList
             }
-            .navigationTitle("Artwork Fixer")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Scan") { Task { await scan() } }
-                        .disabled(isScanning || isFixingAll)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fix All") { Task { await fixAll() } }
-                        .disabled(problems.isEmpty || isFixingAll)
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if isFixingAll {
-                    VStack(spacing: 8) {
-                        ProgressView(value: fixProgress)
-                        Text("Fetching artwork… \(Int(fixProgress * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .padding()
-                }
-            }
-            .task { await scan() }
         }
+        .navigationTitle("Artwork Fixer")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Fix All") { Task { await fixAll() } }
+                    .disabled(problems.isEmpty || isFixingAll)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await scan() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isScanning || isFixingAll)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if isFixingAll {
+                VStack(spacing: 8) {
+                    ProgressView(value: fixProgress)
+                    Text(fixStatus.isEmpty
+                         ? "Fetching artwork… \(Int(fixProgress * 100))%"
+                         : fixStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .padding()
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding()
+            }
+        }
+        .task { await scan() }
     }
 
     private var problemList: some View {
@@ -68,9 +75,10 @@ struct ArtworkFixerView: View {
             }
             .swipeActions(edge: .trailing) {
                 Button("Auto-Fix") {
-                    Task { await autoFix(problem: problem) }
+                    Task { await autoFix(id: problem.id) }
                 }
                 .tint(Color.accentColor)
+                .disabled(isFixingAll)
             }
         }
         .sheet(item: $selectedAlbum) { album in
@@ -90,23 +98,29 @@ struct ArtworkFixerView: View {
                     .padding()
             }
             .onChange(of: photoPickerItem) {
-                if let item = photoPickerItem {
-                    Task {
-                        if let data = try? await item.loadTransferable(type: Data.self) {
-                            // Derive the canonical key (same one library rows use).
-                            let key = album.artworkCacheKey
-                                ?? ArtworkFetchService.generateCacheKey(artist: album.artist, album: album.title)
-                            ArtworkCache.shared.store(imageData: data, forKey: key)
-                            // Propagate to all tracks so the fix registers on next scan.
-                            library.setArtworkCacheKey(key, forAlbumID: album.id)
-                            await scan()
-                        }
-                        photoPickerItem = nil
+                guard let item = photoPickerItem else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        let key = album.artworkCacheKey
+                            ?? ArtworkFetchService.generateCacheKey(artist: album.artist, album: album.title)
+                        ArtworkCache.shared.store(imageData: data, forKey: key)
+                        library.setArtworkCacheKey(key, forAlbumID: album.id)
+                        await scan()
                     }
+                    photoPickerItem = nil
+                    selectedAlbum = nil
                 }
             }
             .navigationTitle(album.title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        photoPickerItem = nil
+                        selectedAlbum = nil
+                    }
+                }
+            }
         }
         .presentationDetents([.medium])
     }
@@ -116,8 +130,7 @@ struct ArtworkFixerView: View {
         isScanning = true
         var found: [ArtworkProblem] = []
         for album in library.albums {
-            let problem = checkArtwork(album: album)
-            if let p = problem { found.append(p) }
+            if let p = checkArtwork(album: album) { found.append(p) }
         }
         await MainActor.run {
             problems = found.sorted { $0.severity.sortPriority > $1.severity.sortPriority }
@@ -143,27 +156,57 @@ struct ArtworkFixerView: View {
     }
 
     // MARK: - Fix
-    private func autoFix(problem: ArtworkProblem) async {
-        let album = problem.album
-        // Use the canonical key (same one ArtworkFetchService and library rows use)
-        // instead of album.id, which nothing else looks up.
-        let key = album.artworkCacheKey
-            ?? ArtworkFetchService.generateCacheKey(artist: album.artist, album: album.title)
-        await ArtworkFetchService.shared.fetch(artist: album.artist, album: album.title, cacheKey: key)
-        // Stamp the key on every track in the album so the artwork is visible immediately.
-        library.setArtworkCacheKey(key, forAlbumID: album.id)
-        await scan()
+    /// Single-row fix. Updates status in-place so the row reflects what's
+    /// happening, and removes the row on success after a brief delay.
+    private func autoFix(id: UUID) async {
+        guard let idx = problems.firstIndex(where: { $0.id == id }) else { return }
+        let album = problems[idx].album
+        problems[idx].status = .fetching
+        let success = await ArtworkApplier.fetchAndApply(album: album, library: library)
+        if let i = problems.firstIndex(where: { $0.id == id }) {
+            if success {
+                problems[i].status = .applied
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                problems.removeAll { $0.id == id }
+            } else {
+                problems[i].status = .notFound
+            }
+        }
     }
 
     private func fixAll() async {
         isFixingAll = true
-        for (i, problem) in problems.enumerated() {
-            await autoFix(problem: problem)
-            await MainActor.run {
-                fixProgress = Double(i + 1) / Double(problems.count)
+        fixProgress = 0
+        // Snapshot the IDs so we don't iterate over rows being removed mid-flight.
+        let ids = problems.filter { $0.status == .pending || $0.status == .notFound }.map { $0.id }
+        for (i, id) in ids.enumerated() {
+            if let p = problems.first(where: { $0.id == id }) {
+                fixStatus = "Fetching: \(p.album.title)"
             }
+            await autoFix(id: id)
+            fixProgress = Double(i + 1) / Double(ids.count)
         }
+        fixStatus = "Done."
+        try? await Task.sleep(nanoseconds: 600_000_000)
         isFixingAll = false
+        fixStatus = ""
+    }
+}
+
+// MARK: - ArtworkApplier
+/// Shared helper that fetches artwork for an album and stamps the key onto every
+/// track. Used by both ArtworkFixerView and the per-album fix in AlbumDetailView.
+enum ArtworkApplier {
+    /// Returns true if the cache contains artwork for this album after the call.
+    @discardableResult
+    static func fetchAndApply(album: Album, library: LibraryViewModel) async -> Bool {
+        let key = album.artworkCacheKey
+            ?? ArtworkFetchService.generateCacheKey(artist: album.artist, album: album.title)
+        await ArtworkFetchService.shared.fetch(artist: album.artist, album: album.title, cacheKey: key)
+        await MainActor.run {
+            library.setArtworkCacheKey(key, forAlbumID: album.id)
+        }
+        return ArtworkCache.shared.hasArtwork(forKey: key)
     }
 }
 
@@ -172,6 +215,15 @@ struct ArtworkProblem: Identifiable {
     let id = UUID()
     let album: Album
     let severity: Severity
+    var status: Status = .pending
+
+    enum Status: Equatable {
+        case pending
+        case fetching
+        case applied
+        case notFound
+        case error(String)
+    }
 
     enum Severity {
         case missing
@@ -207,7 +259,6 @@ struct ArtworkProblemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Current (bad) artwork or placeholder
             MiniArtworkView(cacheKey: problem.album.artworkCacheKey)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -218,17 +269,48 @@ struct ArtworkProblemRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                // Severity badge
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(problem.severity.color)
-                        .frame(width: 6, height: 6)
-                    Text(severityDetail)
-                        .font(.caption2)
-                        .foregroundStyle(problem.severity.color)
-                }
+                statusLine
             }
             Spacer()
+            trailingControl
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var statusLine: some View {
+        switch problem.status {
+        case .pending:
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(problem.severity.color)
+                    .frame(width: 6, height: 6)
+                Text(severityDetail)
+                    .font(.caption2)
+                    .foregroundStyle(problem.severity.color)
+            }
+        case .fetching:
+            Label("Fetching…", systemImage: "arrow.down.circle")
+                .font(.caption2).foregroundStyle(.secondary)
+        case .applied:
+            Label("Applied", systemImage: "checkmark.circle.fill")
+                .font(.caption2).foregroundStyle(.green)
+        case .notFound:
+            Label("No artwork found online — try Photos", systemImage: "questionmark.circle")
+                .font(.caption2).foregroundStyle(.orange)
+        case .error(let msg):
+            Text(msg).font(.caption2).foregroundStyle(.red).lineLimit(2)
+        }
+    }
+
+    @ViewBuilder
+    private var trailingControl: some View {
+        switch problem.status {
+        case .fetching:
+            ProgressView().scaleEffect(0.7)
+        case .applied:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        default:
             Button {
                 onTap(problem.album)
             } label: {
@@ -237,7 +319,6 @@ struct ArtworkProblemRow: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.vertical, 4)
     }
 
     private var severityDetail: String {

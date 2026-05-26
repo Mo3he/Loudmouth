@@ -17,6 +17,7 @@ struct AlbumEditorView: View {
     @State private var artworkPhotoItem: PhotosPickerItem?
     @State private var artworkImage: UIImage?
     @State private var pendingArtworkData: Data?
+    @State private var removeArtwork = false
 
     init(album: Album) {
         self.album = album
@@ -73,6 +74,13 @@ struct AlbumEditorView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                    if artworkImage != nil {
+                        Button("Remove Artwork", role: .destructive) {
+                            artworkImage = nil
+                            pendingArtworkData = nil
+                            removeArtwork = true
+                        }
+                    }
                 }
             }
             .navigationTitle("Edit Album")
@@ -104,7 +112,13 @@ struct AlbumEditorView: View {
 
         // Derive (or reuse) the artwork cache key
         var artworkKey: String? = album.artworkCacheKey
-        if let data = pendingArtworkData {
+        if removeArtwork {
+            // Clear the cached artwork
+            if let key = artworkKey {
+                ArtworkCache.shared.remove(forKey: key)
+            }
+            artworkKey = nil
+        } else if let data = pendingArtworkData {
             let key = artworkKey
                 ?? ArtworkFetchService.generateCacheKey(artist: album.artist, album: album.title)
             ArtworkCache.shared.store(imageData: data, forKey: key)
@@ -117,7 +131,11 @@ struct AlbumEditorView: View {
             if !artist.isEmpty { track.albumArtist = artist }
             if let y = yearInt { track.year = y }
             if !genre.isEmpty  { track.genre = genre }
-            if let key = artworkKey { track.artworkCacheKey = key }
+            if removeArtwork {
+                track.artworkCacheKey = nil
+            } else if let key = artworkKey {
+                track.artworkCacheKey = key
+            }
             library.update(track: track)
         }
 

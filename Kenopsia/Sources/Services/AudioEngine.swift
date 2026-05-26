@@ -1,6 +1,7 @@
 import AVFoundation
 import MediaPlayer
 import Accelerate
+import os
 
 // MARK: - AudioEngine
 /// Wraps AVAudioEngine to provide:
@@ -27,6 +28,11 @@ final class AudioEngine {
     /// Serialises access to mutable state shared between the audio-completion thread
     /// and the main thread (stagingIsReady, isUsingPlayerA, nodeGenerations).
     private let lock = NSLock()
+
+    /// Dedicated queue for gapless swap operations. play() and stop() on
+    /// AVAudioPlayerNode synchronize with the render thread; calling them directly
+    /// from within a completion callback deadlocks. All swap work is dispatched here.
+    private let gaplessQueue = DispatchQueue(label: "net.mohome.kenopsia.gapless", qos: .userInteractive)
 
     // MARK: - Per-node generation counters
     // Each scheduleFile/scheduleSegment call captures the node's current generation.
@@ -108,7 +114,12 @@ final class AudioEngine {
         graphBuilt = true
     }
 
-    private func configureAudioSession() {
+    /// Activates the .playback audio session. Safe to call repeatedly.
+    /// Exposed so PlaybackService can guarantee the session is configured even
+    /// when playback uses AVPlayer (DLNA / Subsonic / HTTP streams) and never
+    /// touches the AVAudioEngine path — without this, AVPlayer plays "silently"
+    /// under the default .soloAmbient category (progress advances, no audio).
+    func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         // .allowBluetooth is only valid for .record / .playAndRecord categories.
         // Using it with .playback causes kAudio_ParamError (-50) on device which
@@ -253,15 +264,21 @@ final class AudioEngine {
     /// (fires immediately on stopped nodes) and .dataConsumed (fires when engine reads ahead)
     /// give false positives. End-of-track detection is handled by:
     ///   - Gapless: sentinel buffer installed after swap in handlePlaybackCompletion()
-    ///   - Crossfade: position timer in PlaybackService triggers early
+    ///   - Crossfade: sentinel buffer installed in crossfadeToStaging()
     func scheduleNext(file: AVAudioFile) {
         let player = stagingPlayer
+        let playerName = player === playerA ? "A" : "B"
+        PLog.scheduler.debug("scheduleNext: scheduling on player\(playerName, privacy: .public) file=\(file.url.lastPathComponent, privacy: .public)")
         nextGen(for: player)
         player.stop()
+        // Reset volume to 1 in case a previous crossfade left it at 0 (e.g. fade was
+        // cancelled before its final step ran). applyReplayGain will fine-tune it later.
+        player.volume = 1.0
         player.scheduleFile(file, at: nil)
         lock.lock()
         stagingIsReady = true
         lock.unlock()
+        PLog.scheduler.debug("scheduleNext: stagingIsReady=true player\(playerName, privacy: .public)")
     }
 
     /// Swap players for gapless / crossfade transition.
@@ -273,14 +290,18 @@ final class AudioEngine {
         lock.lock()
         guard stagingIsReady else {
             lock.unlock()
+            PLog.engine.warning("transition: stagingIsReady=false — falling back to resolveAndPlay (crossfade=\(crossfade, privacy: .public))")
             return false
         }
         stagingIsReady = false
         lock.unlock()
+        let newActive = isUsingPlayerA ? "B" : "A"
         if crossfade && crossfadeDuration > 0 {
+            PLog.engine.debug("transition: crossfade → player\(newActive, privacy: .public) duration=\(self.crossfadeDuration, privacy: .public)s")
             crossfadeToStaging()
         } else {
             // True gapless: staging player was pre-scheduled; start it and stop the old one.
+            PLog.engine.debug("transition: gapless swap → player\(newActive, privacy: .public)")
             stagingPlayer.play()
             nextGen(for: activePlayer)   // invalidate before stopping old active player
             activePlayer.stop()
@@ -378,6 +399,21 @@ final class AudioEngine {
         let fadeGen = crossfadeGeneration
         staging.volume = 0
         staging.play()
+        // Install a sentinel buffer so end-of-track is detected when the crossfade
+        // trigger fires too early or stagingIsReady was false at trigger time.
+        // The sentinel's generation is automatically invalidated when the NEXT crossfade
+        // fires (crossfadeToStaging calls nextGen(for: active) on this same node after
+        // isUsingPlayerA toggles), so it never fires spuriously after a normal handoff.
+        let stagingGen = currentGenLocked(for: staging)
+        let sentinelFormat = staging.outputFormat(forBus: 0)
+        if sentinelFormat.sampleRate > 0,
+           let sentinel = AVAudioPCMBuffer(pcmFormat: sentinelFormat, frameCapacity: 1) {
+            sentinel.frameLength = 1
+            staging.scheduleBuffer(sentinel, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                guard let self, self.currentGenLocked(for: staging) == stagingGen else { return }
+                self.handlePlaybackCompletion()
+            }
+        }
         for i in 0...steps {
             let t = DispatchTime.now() + stepDuration * Double(i)
             DispatchQueue.main.asyncAfter(deadline: t) { [weak self] in
@@ -392,6 +428,9 @@ final class AudioEngine {
                     active.volume = 1.0
                     // Apply the ReplayGain target volume now that the ramp is done.
                     staging.volume = self.pendingActivePlayerVolume
+                    // Signal PlaybackService to pre-schedule the next-next track now that
+                    // the old player has fully stopped and can safely be reused as staging.
+                    self.onCrossfadeCompleted?()
                 }
             }
         }
@@ -406,34 +445,46 @@ final class AudioEngine {
         lock.lock()
         let ready = stagingIsReady
         let wantGapless = crossfadeDuration == 0
+        PLog.engine.debug("handlePlaybackCompletion: ready=\(ready, privacy: .public) wantGapless=\(wantGapless, privacy: .public)")
         if ready && wantGapless {
             stagingIsReady = false
             let staging = isUsingPlayerA ? playerB : playerA
             let active = isUsingPlayerA ? playerA : playerB
+            let stagingName = isUsingPlayerA ? "B" : "A"
             let activeId = ObjectIdentifier(active)
             nodeGenerations[activeId, default: 0] += 1
             // Capture gen for the new active (staging) before releasing lock.
             let newActiveGen = nodeGenerations[ObjectIdentifier(staging), default: 0]
             isUsingPlayerA.toggle()
             lock.unlock()
-            staging.play()
-            active.stop()
-            // Install a sentinel buffer on the new active player so we detect
-            // when THIS track finishes. The player is now playing, so
-            // .dataPlayedBack will fire at the correct time (after the main
-            // file and this 1-frame silent buffer have been rendered).
-            let format = staging.outputFormat(forBus: 0)
-            if format.sampleRate > 0,
-               let sentinel = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1) {
-                sentinel.frameLength = 1
-                staging.scheduleBuffer(sentinel, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                    guard let self, self.currentGenLocked(for: staging) == newActiveGen else { return }
-                    self.handlePlaybackCompletion()
+            // Dispatch ALL player operations off the CoreAudio callback thread.
+            // play() and stop() both synchronize with the render thread; calling
+            // either from within a completion callback deadlocks because the render
+            // thread is the one that dispatched this very callback.
+            gaplessQueue.async { [weak self] in
+                guard let self else { return }
+                PLog.engine.debug("handlePlaybackCompletion: gapless swap → player\(stagingName, privacy: .public) vol=\(staging.volume, privacy: .public)")
+                staging.play()
+                active.stop()
+                // Install a sentinel buffer so we detect when THIS track finishes.
+                let format = staging.outputFormat(forBus: 0)
+                if format.sampleRate > 0,
+                   let sentinel = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1) {
+                    sentinel.frameLength = 1
+                    staging.scheduleBuffer(sentinel, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                        guard let self, self.currentGenLocked(for: staging) == newActiveGen else { return }
+                        self.handlePlaybackCompletion()
+                    }
+                    PLog.engine.debug("handlePlaybackCompletion: sentinel installed sampleRate=\(format.sampleRate, privacy: .public)")
+                } else {
+                    PLog.engine.error("handlePlaybackCompletion: sentinel SKIPPED — sampleRate=\(format.sampleRate, privacy: .public) (end-of-track will rely on stall detector)")
                 }
+                self.onGaplessTransitionDidComplete?()
             }
-            onGaplessTransitionDidComplete?()
         } else {
             lock.unlock()
+            let reason = !ready ? "stagingNotReady" : "crossfadeEnabled"
+            PLog.engine.debug("handlePlaybackCompletion: → onTrackDidFinish (\(reason, privacy: .public))")
             onTrackDidFinish?()
         }
     }
@@ -443,6 +494,11 @@ final class AudioEngine {
     var onGaplessTransitionDidComplete: (() -> Void)?
 
     var onTrackDidFinish: (() -> Void)?
+
+    /// Fired when a crossfade completes (all volume ramp steps done, old player stopped).
+    /// PlaybackService uses this to pre-schedule the next-next track, which must wait
+    /// until the old (fading) player has stopped so scheduleNext() can reuse it safely.
+    var onCrossfadeCompleted: (() -> Void)?
 
     // MARK: - Spectrum metering (FFT)
     private(set) var meterLevels: [Float] = Array(repeating: 0, count: 14)

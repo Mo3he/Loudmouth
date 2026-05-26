@@ -32,6 +32,18 @@ extension EnvironmentValues {
     }
 }
 
+// MARK: - Sidebar toggle environment key
+private struct SidebarToggleKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var sidebarToggle: (() -> Void)? {
+        get { self[SidebarToggleKey.self] }
+        set { self[SidebarToggleKey.self] = newValue }
+    }
+}
+
 // MARK: - Color hex utilities
 extension Color {
     init?(hex: String) {

@@ -71,13 +71,23 @@ actor TagWriter {
         let overriddenKeys: Set<String> = ["©nam", "©ART", "©alb", "aART", "©gen", "©wrt", "©day"]
         let existingMetadata = try await asset.load(.metadata)
         for item in existingMetadata {
+            // Some asset metadata items return immutable copies that can't be
+            // downcast to AVMutableMetadataItem. Skip those rather than crash.
+            guard let mutable = item.mutableCopy() as? AVMutableMetadataItem else { continue }
             guard let key = item.key as? String else {
                 // Non-string keys (numeric iTunes keys like covr) -- preserve them
-                metadataItems.append(item.mutableCopy() as! AVMutableMetadataItem)
+                // unless we are stripping artwork.
+                if tags.removeArtwork || tags.artworkData != nil {
+                    // Skip covr (artwork) atoms so they are removed/replaced
+                    if let numKey = item.key as? NSNumber, numKey.uint32Value == 0x636F7672 {
+                        continue
+                    }
+                }
+                metadataItems.append(mutable)
                 continue
             }
             if !overriddenKeys.contains(key) {
-                metadataItems.append(item.mutableCopy() as! AVMutableMetadataItem)
+                metadataItems.append(mutable)
             }
         }
 
@@ -132,7 +142,7 @@ actor TagWriter {
 
         // Frame IDs we always write fresh
         var overriddenIDs: Set<String> = ["TIT2", "TPE1", "TPE2", "TALB", "TCON", "TCOM", "TDRC", "TYER", "TRCK", "TPOS", "COMM"]
-        if tags.artworkData != nil { overriddenIDs.insert("APIC") }
+        if tags.artworkData != nil || tags.removeArtwork { overriddenIDs.insert("APIC") }
 
         var preserved = Data()
         var offset = 10
@@ -533,6 +543,8 @@ struct TrackTags {
     var composer: String?
     var comment: String?
     var artworkData: Data?
+    /// When true, strip embedded artwork from the file (and clear the cache key).
+    var removeArtwork: Bool = false
 
     init(track: Track) {
         title       = track.title

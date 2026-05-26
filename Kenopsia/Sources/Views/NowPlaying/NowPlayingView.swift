@@ -5,10 +5,12 @@ import MediaPlayer
 // MARK: - NowPlayingView
 struct NowPlayingView: View {
     @EnvironmentObject var player: PlayerViewModel
+    @StateObject private var castService = ChromecastService.shared
     @Environment(\.kAccent) var accent
     @AppStorage("vuMeterEnabled") var vuMeterEnabled = true
     @State private var showingLyrics = false
     @State private var showingEQ = false
+    @State private var showingTagEditor = false
     @State private var vuLevels: [CGFloat] = Array(repeating: 0, count: 14)
     @State private var peakLevels: [CGFloat] = Array(repeating: 0, count: 14)
     @State private var peakDecayCounters: [Int] = Array(repeating: 0, count: 14)
@@ -41,6 +43,19 @@ struct NowPlayingView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.opacity)
                             .padding(.horizontal, 24)
+                            .overlay(alignment: .topTrailing) {
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.25)) { showingLyrics = false }
+                                } label: {
+                                    Image(systemName: "music.note")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.white.opacity(0.6))
+                                        .padding(10)
+                                        .background(Color.white.opacity(0.08), in: Circle())
+                                }
+                                .padding(.trailing, 8)
+                                .padding(.top, 4)
+                            }
                     }
                 } else {
                     artworkDisplay
@@ -56,7 +71,7 @@ struct NowPlayingView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 8)
 
-                if vuMeterEnabled, !isAppleMusicTrack {
+                if vuMeterEnabled, !isAppleMusicTrack, !castService.isCasting {
                     vuMeter
                         .padding(.horizontal, 24)
                         .padding(.bottom, 14)
@@ -80,6 +95,13 @@ struct NowPlayingView: View {
         }
         .sheet(isPresented: $player.showingQueue) {
             QueueView().environmentObject(player)
+        }
+        .sheet(isPresented: $showingTagEditor) {
+            if let track = player.queue.currentTrack {
+                NavigationStack {
+                    TagEditorView(track: track)
+                }
+            }
         }
         .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
             updateVULevels()
@@ -239,8 +261,28 @@ struct NowPlayingView: View {
             Image(systemName: "speaker.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.35))
-            SystemVolumeSlider(tintColor: UIColor(accent))
+            if castService.isCasting {
+                // When casting, MPVolumeView controls the phone — not the Cast device.
+                // Use a real slider wired directly to the Cast session volume instead.
+                Slider(
+                    value: Binding(
+                        get: { Double(castService.castDeviceVolume) },
+                        set: { castService.setVolume(Float($0)) }
+                    ),
+                    in: 0...1
+                )
+                .tint(accent)
                 .frame(height: 28)
+            } else if DemoDataProvider.isActive {
+                // MPVolumeView is always blank on the simulator; show a static fake slider.
+                Slider(value: .constant(0.72))
+                    .tint(accent)
+                    .frame(height: 28)
+                    .allowsHitTesting(false)
+            } else {
+                SystemVolumeSlider(tintColor: UIColor(accent))
+                    .frame(height: 28)
+            }
             Image(systemName: "speaker.wave.3.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.35))
@@ -267,6 +309,19 @@ struct NowPlayingView: View {
                 }
             }
             Spacer()
+            Button {
+                guard player.queue.currentTrack != nil else { return }
+                showingTagEditor = true
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: "tag")
+                    Text("TAG")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(1)
+                }
+            }
+            .disabled(player.queue.currentTrack == nil)
+            Spacer()
             VStack(spacing: 3) {
                 AirPlayButtonView()
                     .frame(width: 22, height: 20)
@@ -274,6 +329,15 @@ struct NowPlayingView: View {
                     .font(.system(size: 8, weight: .bold))
                     .tracking(1)
                     .foregroundStyle(.white.opacity(0.45))
+            }
+            Spacer()
+            VStack(spacing: 3) {
+                CastButtonView(tintColor: castService.isCasting ? UIColor(accent) : .white.withAlphaComponent(0.45))
+                    .frame(width: 22, height: 22)
+                Text(castService.isCasting ? "CASTING" : "CAST")
+                    .font(.system(size: 8, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(castService.isCasting ? accent : .white.opacity(0.45))
             }
             Spacer()
             ShareLink(
@@ -308,6 +372,17 @@ struct NowPlayingView: View {
     }
 
     private func updateVULevels() {
+        #if DEBUG
+        if DemoDataProvider.isActive {
+            // Frozen synthetic spectrum for App Store screenshots.
+            let demoLevels: [CGFloat] = [0.52, 0.68, 0.78, 0.84, 0.73, 0.62, 0.68, 0.56, 0.47, 0.42, 0.37, 0.32, 0.27, 0.22]
+            for i in 0..<vuLevels.count {
+                vuLevels[i]    = demoLevels[i]
+                peakLevels[i]  = min(1.0, demoLevels[i] + 0.06)
+            }
+            return
+        }
+        #endif
         let rawLevels = player.meterLevels
         let isPlaying = player.state.status == .playing
 
